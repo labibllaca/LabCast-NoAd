@@ -28,7 +28,8 @@ data class FeedEpisode(
     val publishDate: String,
     val audioUrl: String,
     val adTimestampsSeconds: String = "",
-    val chapters: String = ""
+    val chapters: String = "",
+    val transcript: String = ""
 )
 
 enum class PodcastSource(val displayName: String, val badgeColorHex: Long) {
@@ -207,6 +208,18 @@ object PodcastApiClient {
 
                 val epId = "rss_${cleanTitle.hashCode().toString().replace("-", "x")}_$index"
 
+                // Generate timestamped transcript with identified sponsor strings
+                val generatedTranscriptSegments = com.example.data.TranscriptParser.parseOrGenerateTranscript(
+                    rawTranscript = null,
+                    episodeTitle = cleanTitle,
+                    episodeDescription = cleanDesc,
+                    durationSeconds = durationSec,
+                    chapters = parsedChapters
+                )
+                val transcriptFormatted = generatedTranscriptSegments.joinToString("\n") { seg ->
+                    "${seg.formattedTime()} [${seg.speaker}] ${seg.text}"
+                }
+
                 list.add(
                     FeedEpisode(
                         id = epId,
@@ -214,9 +227,10 @@ object PodcastApiClient {
                         description = cleanDesc,
                         durationSeconds = durationSec,
                         publishDate = pubDate,
-                        audioUrl = audioUrl.ifEmpty { "https://example.com/audio/stream_$index.mp3" },
+                        audioUrl = audioUrl,
                         adTimestampsSeconds = "45,${durationSec / 2}",
-                        chapters = chaptersPipeString
+                        chapters = chaptersPipeString,
+                        transcript = transcriptFormatted
                     )
                 )
                 index++
@@ -431,28 +445,52 @@ object CuratedPodcastCatalog {
 
     fun generateEpisodesForShow(showTitle: String): List<FeedEpisode> {
         val count = 6
+        val realPodcastAudioUrls = listOf(
+            "https://traffic.megaphone.fm/SCIM7156610982.mp3",
+            "https://traffic.megaphone.fm/SCIM7393383815.mp3",
+            "https://traffic.megaphone.fm/SCIM2465421786.mp3",
+            "https://traffic.megaphone.fm/SCIM3386045656.mp3",
+            "https://traffic.megaphone.fm/SCIM7816635332.mp3",
+            "https://traffic.megaphone.fm/SBP4487706450.mp3"
+        )
         return (1..count).map { i ->
             val duration = (1200 + i * 360).toLong()
+            val epTitle = when (i) {
+                1 -> "Episode #$i: Breakthrough Frontiers & Systems Architecture"
+                2 -> "Episode #$i: The Psychology of Modern Attention & Focus"
+                3 -> "Episode #$i: Decentralized Data & Autonomous Networks"
+                4 -> "Episode #$i: Deconstructing the Great Paradigm Shift"
+                5 -> "Episode #$i: Security Auditing & Zero-Trust Principles"
+                else -> "Episode #$i: Special Field Report & Deep-Dive Interview"
+            }
+            val epDesc = "Host and guest experts discuss core methodologies, empirical research, and real-world implications of these emergent systems for the modern era."
+            val audio = realPodcastAudioUrls[(i - 1) % realPodcastAudioUrls.size]
+            val chs = when (i % 3) {
+                1 -> "0:Introduction & Cold Open|150:Guest Background|420:Key Innovations & Technical Metrics|${duration - 300}:Listener Q&A|${duration - 60}:Episode Wrap-up"
+                2 -> "0:Weekly Debrief|180:Deep-Dive Technical Analysis|540:Enterprise Deployment Case Study|${duration - 240}:Future Outlook|${duration - 60}:Closing Credits"
+                else -> "0:Prologue|120:Part 1: Foundational Paradigms|480:Part 2: Real-World Applications|${duration - 360}:Interactive Roundtable|${duration - 90}:Conclusion"
+            }
+
+            val transcriptSegs = com.example.data.TranscriptParser.parseOrGenerateTranscript(
+                rawTranscript = null,
+                episodeTitle = epTitle,
+                episodeDescription = epDesc,
+                durationSeconds = duration
+            )
+            val transcriptStr = transcriptSegs.joinToString("\n") { seg ->
+                "${seg.formattedTime()} [${seg.speaker}] ${seg.text}"
+            }
+
             FeedEpisode(
                 id = "${showTitle.hashCode().toString().replace("-", "p")}_ep_$i",
-                title = when (i) {
-                    1 -> "Episode #$i: Breakthrough Frontiers & Systems Architecture"
-                    2 -> "Episode #$i: The Psychology of Modern Attention & Focus"
-                    3 -> "Episode #$i: Decentralized Data & Autonomous Networks"
-                    4 -> "Episode #$i: Deconstructing the Great Paradigm Shift"
-                    5 -> "Episode #$i: Security Auditing & Zero-Trust Principles"
-                    else -> "Episode #$i: Special Field Report & Deep-Dive Interview"
-                },
-                description = "Host and guest experts discuss core methodologies, empirical research, and real-world implications of these emergent systems for the modern era.",
+                title = epTitle,
+                description = epDesc,
                 durationSeconds = duration,
                 publishDate = "2026-09-0${(7 - i).coerceAtLeast(1)}",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${((i - 1) % 6) + 1}.mp3",
+                audioUrl = audio,
                 adTimestampsSeconds = "30,${duration / 2}",
-                chapters = when (i % 3) {
-                    1 -> "0:Introduction & Cold Open|150:Guest Background|420:Key Innovations & Technical Metrics|${duration - 300}:Listener Q&A|${duration - 60}:Episode Wrap-up"
-                    2 -> "0:Weekly Debrief|180:Deep-Dive Technical Analysis|540:Enterprise Deployment Case Study|${duration - 240}:Future Outlook|${duration - 60}:Closing Credits"
-                    else -> "0:Prologue|120:Part 1: Foundational Paradigms|480:Part 2: Real-World Applications|${duration - 360}:Interactive Roundtable|${duration - 90}:Conclusion"
-                }
+                chapters = chs,
+                transcript = transcriptStr
             )
         }
     }

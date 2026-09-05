@@ -122,6 +122,15 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
             )
         )
 
+        val realAudioUrls = listOf(
+            "https://traffic.megaphone.fm/SCIM7156610982.mp3",
+            "https://traffic.megaphone.fm/SCIM7393383815.mp3",
+            "https://traffic.megaphone.fm/SCIM2465421786.mp3",
+            "https://traffic.megaphone.fm/SCIM3386045656.mp3",
+            "https://traffic.megaphone.fm/SCIM7816635332.mp3",
+            "https://traffic.megaphone.fm/SBP4487706450.mp3"
+        )
+
         val defaultEpisodes = listOf(
             EpisodeEntity(
                 id = "ep_huberman_1",
@@ -132,11 +141,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.",
                 durationSeconds = 2040, // 34 minutes
                 publishDate = "2026-09-03",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+                audioUrl = realAudioUrls[0],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "407,1196,1718",
-                chapters = "0:Dr. Gina Poe Introduction|19:Sleep States & Perfect Night's Sleep|143:Early Sleep & Memory Processing|274:Growth Hormone & Consistent Bedtime|407:Sponsor: LMNT|500:Alcohol & Negative Sleep Effects|558:Middle Sleep States & Creativity|632:Waking During Night & Hydration|699:REM, Deep Sleep & Sleepwalking|841:Morning Grogginess & Trackers|953:Brain Waste Clearance & Glial Flow|1196:Sponsor: Eight Sleep|1274:Locus Coeruleus & Calm Bedtime Routine|1516:Sleep Spindles & Learning|1718:Sponsor: AG1|1796:Trauma Recovery & REM Sleep|2009:Acknowledgements & Disclaimers"
+                chapters = "0:Dr. Gina Poe Introduction|19:Sleep States & Perfect Night's Sleep|143:Early Sleep & Memory Processing|274:Growth Hormone & Consistent Bedtime|407:Sponsor: LMNT|500:Alcohol & Negative Sleep Effects|558:Middle Sleep States & Creativity|632:Waking During Night & Hydration|699:REM, Deep Sleep & Sleepwalking|841:Morning Grogginess & Trackers|953:Brain Waste Clearance & Glial Flow|1196:Sponsor: Eight Sleep|1274:Locus Coeruleus & Calm Bedtime Routine|1516:Sleep Spindles & Learning|1718:Sponsor: AG1|1796:Trauma Recovery & REM Sleep|2009:Acknowledgements & Disclaimers",
+                transcript = "0:00 [Host] Welcome to Huberman Lab. Today we are joined by Dr. Gina Poe to discuss the architecture of sleep.\n00:45 [Sponsor Break] This episode is brought to you by AG1 and LMNT. AG1 is your daily foundational nutrition drink. Use promo code HUBERMAN for 20% off.\n02:23 [Host] Dr. Poe, let's start with how deep sleep consolidates memories.\n06:47 [Host [Sponsor]] Quick break for our sponsor Eight Sleep. The Pod 4 Ultra cover regulates temperature dynamically while you sleep.\n19:56 [Host [Sponsor]] Brought to you by LMNT zero-sugar hydration electrolytes. Visit drinklmnt.com/huberman.\n25:10 [Guest] As we move into REM sleep, the brain actively strips emotional charge from difficult memories."
             ),
             EpisodeEntity(
                 id = "ep_huberman_2",
@@ -147,11 +157,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.",
                 durationSeconds = 2400, // 40 mins
                 publishDate = "2026-08-27",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+                audioUrl = realAudioUrls[1],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "180,960",
-                chapters = "0:Dopamine Dynamics Overview|180:Sponsor: Athletic Greens|270:The Dopamine Baseline & Peaks|540:Effort and the Reward Circuit|960:Sponsor: InsideTracker|1050:Cold Exposure & Neurotransmitter Release|1500:Intermittent Reward Schedules|2100:Actionable Protocols & Summary"
+                chapters = "0:Dopamine Dynamics Overview|180:Sponsor: Athletic Greens|270:The Dopamine Baseline & Peaks|540:Effort and the Reward Circuit|960:Sponsor: InsideTracker|1050:Cold Exposure & Neurotransmitter Release|1500:Intermittent Reward Schedules|2100:Actionable Protocols & Summary",
+                transcript = "0:00 [Host] Welcome back. Today's deep dive is centered on dopamine dynamics and focus.\n03:00 [Sponsor Break] Brought to you by Athletic Greens AG1. Nutrient-dense daily greens for immune support and gut health.\n04:30 [Host] Understanding baseline dopamine versus peak dopamine is critical for long-term motivation.\n16:00 [Sponsor Break] Today's episode is sponsored by InsideTracker. Personalized biometric blood analysis for optimal performance.\n25:00 [Host] Cold exposure triggers a sustained 250% increase in baseline dopamine and epinephrine."
             ),
             EpisodeEntity(
                 id = "ep_shqip_1",
@@ -162,11 +173,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Një hetim i thellë mbi ngjarje të pazakonta dhe histori të padëgjuara më parë. Rrëfime autentike nga dëshmitarë të kohës.",
                 durationSeconds = 1800, // 30 mins
                 publishDate = "2026-08-30",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+                audioUrl = realAudioUrls[2],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "120,600",
-                chapters = "0:Hyrje dhe Ngjarja Kryesore|120:Sponsor: Njoftime & Partnerë|210:Dëshmitë e Para|600:Reklamë / Sponsor|690:Zhvillimet e Hetimit|1200:Konkluzionet dhe Mesazhi Përfundimtar"
+                chapters = "0:Hyrje dhe Ngjarja Kryesore|120:Sponsor: Njoftime & Partnerë|210:Dëshmitë e Para|600:Reklamë / Sponsor|690:Zhvillimet e Hetimit|1200:Konkluzionet dhe Mesazhi Përfundimtar",
+                transcript = "0:00 [Mprehësi] Mirë se vini në Shqip Story Podcast. Sot dëgjojmë rrëfime autentike nga arkiva.\n02:00 [Sponsor Break] Ky episod mbështetet nga partnerët tanë zyrtarë. Përdorni kodin SHQIP për ulje speciale.\n03:30 [Mprehësi] Dëshmitari i parë tregon se si ngjarja filloi gjatë vitit 1998 në rajonin verior.\n10:00 [Sponsor Break] Reklamë e shkurtër nga sponsori yne i dytë BetterHelp terapi në internet."
             ),
             EpisodeEntity(
                 id = "ep_harbinger_1",
@@ -177,11 +189,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Jordan sits down with former behavioral analysts to dissect deception detection, social engineering techniques, and how to safeguard your personal boundaries in high-stakes environments.",
                 durationSeconds = 2100, // 35 mins
                 publishDate = "2026-09-02",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+                audioUrl = realAudioUrls[3],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "180,840,1500",
-                chapters = "0:Welcome & Guest Intro|180:Sponsor: BetterHelp|270:Micro-Expressions and Verbal Cues|540:The Anatomy of Social Engineering|840:Sponsor: Shopify|930:Emotional Anchoring Techniques|1500:Sponsor: SimpliSafe|1590:Building Psychological Resilience|1950:Jordan's Final Thoughts"
+                chapters = "0:Welcome & Guest Intro|180:Sponsor: BetterHelp|270:Micro-Expressions and Verbal Cues|540:The Anatomy of Social Engineering|840:Sponsor: Shopify|930:Emotional Anchoring Techniques|1500:Sponsor: SimpliSafe|1590:Building Psychological Resilience|1950:Jordan's Final Thoughts",
+                transcript = "0:00 [Jordan] Welcome to the Jordan Harbinger Show. Today we're deconstructing deception detection tactics.\n03:00 [Sponsor Break] This episode is brought to you by BetterHelp online therapy. Visit betterhelp.com/jordan for 10% off.\n04:30 [Guest] When people lie under stress, micro-expressions reveal hidden emotional state.\n14:00 [Sponsor Break] Sponsored by Shopify. Build your online business today for just \$1 per month at shopify.com/jordan.\n25:00 [Sponsor Break] Supported by SimpliSafe home security systems. Protect your home with 24/7 monitoring."
             ),
             EpisodeEntity(
                 id = "ep_aom_1",
@@ -192,11 +205,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Brett McKay explores how Seneca, Epictetus, and Marcus Aurelius approached adversity, mental fortitude, and disciplined living amidst unpredictable times.",
                 durationSeconds = 1920, // 32 mins
                 publishDate = "2026-09-01",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+                audioUrl = realAudioUrls[4],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "240,900",
-                chapters = "0:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up"
+                chapters = "0:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up",
+                transcript = "0:00 [Brett] Welcome back to the Art of Manliness podcast. Today we discuss stoic resilience.\n04:00 [Sponsor Break] Brought to you by Huckberry. Exceptional outdoor gear, boots, and clothing. Use code AOM20.\n05:30 [Brett] Epictetus famously wrote that we control our intentions and actions, but not external events.\n15:00 [Sponsor Break] Sponsored by Factor Meals. Fresh, chef-crafted meals delivered right to your doorstep."
             ),
             EpisodeEntity(
                 id = "ep_peterson_1",
@@ -207,11 +221,12 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Dr. Jordan B. Peterson explores maps of meaning, the mythological archetype of the hero, and why bearing voluntary responsibility creates sustainable purpose in life.",
                 durationSeconds = 2700, // 45 mins
                 publishDate = "2026-08-31",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
+                audioUrl = realAudioUrls[5],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "300,1200",
-                chapters = "0:Introduction & Genesis of Purpose|300:Sponsor: DailyWire+|390:Chaos, Order, and the Sacred Border|840:The Hero's Journey Across Cultures|1200:Sponsor: ExpressVPN|1290:Voluntary Confrontation with Adversity|2100:The Role of Art & Conscience|2550:Closing Reflections"
+                chapters = "0:Introduction & Genesis of Purpose|300:Sponsor: DailyWire+|390:Chaos, Order, and the Sacred Border|840:The Hero's Journey Across Cultures|1200:Sponsor: ExpressVPN|1290:Voluntary Confrontation with Adversity|2100:The Role of Art & Conscience|2550:Closing Reflections",
+                transcript = "0:00 [Dr. Peterson] Hello everyone. Today's discussion focuses on voluntary responsibility.\n05:00 [Sponsor Break] This episode is brought to you by DailyWire+. Access exclusive documentaries and news.\n06:30 [Dr. Peterson] When you adopt responsibility for your life and community, meaning emerges naturally.\n20:00 [Sponsor Break] Sponsored by ExpressVPN. Protect your online data and private internet browsing."
             ),
             EpisodeEntity(
                 id = "ep_batman_1",
@@ -222,16 +237,39 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "As a torrential storm batters Gotham City, an encrypted emergency broadcast triggers alarms across Wayne Manor. Batman investigates a series of coordinated escapes deep beneath Arkham Asylum.",
                 durationSeconds = 1500, // 25 mins
                 publishDate = "2026-09-04",
-                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+                audioUrl = realAudioUrls[0],
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "90,720",
-                chapters = "0:Gotham City Siren & Storm|90:Sponsor: DC Universe Infinite|180:Descent into Arkham Lower Ward|450:Encounter with Scarecrow's Toxin|720:Ad Break: Batman Graphic Novels|810:The Batmobile Pursuit through Burnside|1200:The Riddler's Cryptic Warning|1410:To Be Continued..."
+                chapters = "0:Gotham City Siren & Storm|90:Sponsor: DC Universe Infinite|180:Descent into Arkham Lower Ward|450:Encounter with Scarecrow's Toxin|720:Ad Break: Batman Graphic Novels|810:The Batmobile Pursuit through Burnside|1200:The Riddler's Cryptic Warning|1410:To Be Continued...",
+                transcript = "0:00 [Narrator] Lightning illuminates the dark skyline of Gotham City as sirens echo over Wayne Manor.\n01:30 [Sponsor Break] Brought to you by DC Universe Infinite. Read over 25,000 digital comics.\n03:00 [Batman] Alfred, scan the Arkham perimeter. We have multiple perimeter breaches on sub-level 4.\n12:00 [Sponsor Break] Special ad break for Batman Year One hardcover graphic novel collection."
             )
         )
 
         podcastDao.insertPodcasts(defaultPodcasts)
         podcastDao.insertEpisodes(defaultEpisodes)
-        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
+
+        // Clean up legacy dummy URLs if present
+        cleanUpLegacyDummyData()
+
+        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
+    }
+
+    private suspend fun cleanUpLegacyDummyData() {
+        val allEps = podcastDao.getAllEpisodes().first()
+        val dummyUrls = listOf("soundhelix.com", "example.com")
+        val replacementUrls = listOf(
+            "https://traffic.megaphone.fm/SCIM7156610982.mp3",
+            "https://traffic.megaphone.fm/SCIM7393383815.mp3",
+            "https://traffic.megaphone.fm/SCIM2465421786.mp3",
+            "https://traffic.megaphone.fm/SCIM3386045656.mp3"
+        )
+        for ((idx, ep) in allEps.withIndex()) {
+            if (dummyUrls.any { ep.audioUrl.contains(it, ignoreCase = true) }) {
+                val realUrl = replacementUrls[idx % replacementUrls.size]
+                val updated = ep.copy(audioUrl = realUrl)
+                podcastDao.updateEpisode(updated)
+            }
+        }
     }
 }

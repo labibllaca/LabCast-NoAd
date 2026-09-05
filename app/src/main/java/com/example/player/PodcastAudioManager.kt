@@ -2,34 +2,35 @@ package com.example.player
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
 import android.media.MediaPlayer
 import android.net.Uri
-import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
-import kotlin.math.sin
 
 /**
  * Robust audio player manager:
- * 1. Tries to stream or play actual audio file/URL using android.media.MediaPlayer
- * 2. If the audio URL is unreachable, network is offline, or an example URL, falls back
- *    to an ambient audio synthesizer (producing a pleasant, soothing low-frequency ambient tone)
- *    so actual sound is guaranteed to come out of the device speakers or headphones.
+ * - Plays real podcast audio streams over HTTP or cached local files using android.media.MediaPlayer.
+ * - Tracks buffering state explicitly so the UI timer remains held at 00:00 or resume point while buffering.
+ * - Never plays random songs or synthetic fallbacks.
  */
 class PodcastAudioManager(private val context: Context) {
 
     private var mediaPlayer: MediaPlayer? = null
-    private var synthJob: Job? = null
-    private var audioTrack: AudioTrack? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    private var isPlaying = false
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+
+    private val _isPrepared = MutableStateFlow(false)
+    val isPrepared: StateFlow<Boolean> = _isPrepared.asStateFlow()
+
+    private var isPlaybackRequested = false
     private var currentUrlOrPath: String? = null
-    private var usingSynth = false
+    private var requestedStartPositionMs: Long = 0L
 
     var onCompletionListener: (() -> Unit)? = null
     var onErrorListener: ((String) -> Unit)? = null
@@ -37,17 +38,20 @@ class PodcastAudioManager(private val context: Context) {
     @Synchronized
     fun play(urlOrPath: String, startPositionMs: Long = 0) {
         stop()
-        isPlaying = true
+        isPlaybackRequested = true
         currentUrlOrPath = urlOrPath
+        requestedStartPositionMs = startPositionMs
+        _isBuffering.value = true
+        _isPrepared.value = false
 
-        // Check if it's a real playable stream or file
         if (isLocalFile(urlOrPath)) {
             playLocalFile(urlOrPath, startPositionMs)
         } else if (isValidHttpUrl(urlOrPath)) {
             playHttpStream(urlOrPath, startPositionMs)
         } else {
-            // URL is placeholder (e.g. example.com) -> start ambient audio synthesizer
-            startAmbientAudioSynth()
+            Log.e("PodcastAudioManager", "Invalid audio URL: $urlOrPath")
+            _isBuffering.value = false
+            onErrorListener?.invoke("Invalid audio stream URL")
         }
     }
 
@@ -61,13 +65,12 @@ class PodcastAudioManager(private val context: Context) {
     }
 
     private fun isValidHttpUrl(url: String): Boolean {
-        return url.startsWith("http://") || url.startsWith("https://") &&
+        return (url.startsWith("http://") || url.startsWith("https://")) &&
                 !url.contains("example.com")
     }
 
     private fun playLocalFile(path: String, startPositionMs: Long) {
         try {
-            usingSynth = false
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -77,7 +80,9 @@ class PodcastAudioManager(private val context: Context) {
                 )
                 setDataSource(path)
                 setOnPreparedListener { mp ->
-                    if (isPlaying) {
+                    _isPrepared.value = true
+                    _isBuffering.value = false
+                    if (isPlaybackRequested) {
                         if (startPositionMs > 0 && startPositionMs < mp.duration) {
                             mp.seekTo(startPositionMs.toInt())
                         }
@@ -85,24 +90,28 @@ class PodcastAudioManager(private val context: Context) {
                     }
                 }
                 setOnCompletionListener {
+                    _isBuffering.value = false
                     onCompletionListener?.invoke()
                 }
                 setOnErrorListener { _, what, extra ->
-                    Log.w("PodcastAudioManager", "Local MediaPlayer error: what=$what extra=$extra, switching to ambient synth")
-                    startAmbientAudioSynth()
+                    _isBuffering.value = false
+                    _isPrepared.value = false
+                    Log.e("PodcastAudioManager", "Local MediaPlayer error: what=$what extra=$extra")
+                    onErrorListener?.invoke("Local file playback error ($what)")
                     true
                 }
                 prepareAsync()
             }
         } catch (e: Exception) {
-            Log.w("PodcastAudioManager", "Error playing local file: ${e.message}, using synth", e)
-            startAmbientAudioSynth()
+            _isBuffering.value = false
+            _isPrepared.value = false
+            Log.e("PodcastAudioManager", "Error playing local file: ${e.message}", e)
+            onErrorListener?.invoke("File player error: ${e.message}")
         }
     }
 
     private fun playHttpStream(url: String, startPositionMs: Long) {
         try {
-            usingSynth = false
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -111,95 +120,117 @@ class PodcastAudioManager(private val context: Context) {
                         .build()
                 )
                 setDataSource(context, Uri.parse(url))
+
                 setOnPreparedListener { mp ->
-                    if (isPlaying) {
+                    _isPrepared.value = true
+                    _isBuffering.value = false
+                    Log.i("PodcastAudioManager", "Stream prepared successfully. Duration: ${mp.duration}ms")
+                    if (isPlaybackRequested) {
                         if (startPositionMs > 0 && startPositionMs < mp.duration) {
                             mp.seekTo(startPositionMs.toInt())
                         }
                         mp.start()
                     }
                 }
+
+                setOnInfoListener { _, what, _ ->
+                    when (what) {
+                        MediaPlayer.MEDIA_INFO_BUFFERING_START -> {
+                            _isBuffering.value = true
+                            true
+                        }
+                        MediaPlayer.MEDIA_INFO_BUFFERING_END -> {
+                            _isBuffering.value = false
+                            true
+                        }
+                        else -> false
+                    }
+                }
+
                 setOnCompletionListener {
+                    _isBuffering.value = false
                     onCompletionListener?.invoke()
                 }
+
                 setOnErrorListener { _, what, extra ->
-                    Log.w("PodcastAudioManager", "Stream MediaPlayer error: what=$what extra=$extra, switching to ambient synth")
-                    startAmbientAudioSynth()
+                    _isBuffering.value = false
+                    _isPrepared.value = false
+                    Log.e("PodcastAudioManager", "Stream MediaPlayer error: what=$what extra=$extra")
+                    onErrorListener?.invoke("Podcast stream error ($what)")
                     true
                 }
+
                 prepareAsync()
             }
         } catch (e: Exception) {
-            Log.w("PodcastAudioManager", "Error streaming audio: ${e.message}, switching to ambient synth", e)
-            startAmbientAudioSynth()
+            _isBuffering.value = false
+            _isPrepared.value = false
+            Log.e("PodcastAudioManager", "Error streaming audio: ${e.message}", e)
+            onErrorListener?.invoke("Audio stream failed: ${e.message}")
         }
     }
 
     @Synchronized
     fun pause() {
-        isPlaying = false
+        isPlaybackRequested = false
         try {
             if (mediaPlayer?.isPlaying == true) {
                 mediaPlayer?.pause()
             }
         } catch (_: Exception) {}
-
-        stopAmbientAudioSynth()
     }
 
     @Synchronized
     fun resume() {
-        isPlaying = true
-        if (usingSynth) {
-            startAmbientAudioSynth()
-        } else {
-            try {
-                if (mediaPlayer != null) {
-                    mediaPlayer?.start()
-                } else if (currentUrlOrPath != null) {
-                    play(currentUrlOrPath!!)
-                } else {
-                    startAmbientAudioSynth()
-                }
-            } catch (e: Exception) {
-                startAmbientAudioSynth()
+        isPlaybackRequested = true
+        try {
+            if (mediaPlayer != null && _isPrepared.value) {
+                mediaPlayer?.start()
+            } else if (currentUrlOrPath != null) {
+                play(currentUrlOrPath!!, requestedStartPositionMs)
             }
+        } catch (e: Exception) {
+            Log.e("PodcastAudioManager", "Error resuming audio: ${e.message}")
         }
     }
 
     @Synchronized
     fun seekTo(positionMs: Long) {
+        requestedStartPositionMs = positionMs
         try {
-            mediaPlayer?.seekTo(positionMs.toInt())
+            if (_isPrepared.value && mediaPlayer != null) {
+                mediaPlayer?.seekTo(positionMs.toInt())
+            }
         } catch (_: Exception) {}
     }
 
     @Synchronized
     fun stop() {
-        isPlaying = false
+        isPlaybackRequested = false
+        _isBuffering.value = false
+        _isPrepared.value = false
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()
             mediaPlayer = null
         } catch (_: Exception) {}
-        stopAmbientAudioSynth()
     }
 
     fun getCurrentPosition(): Long {
         return try {
-            if (mediaPlayer != null && !usingSynth) {
+            if (mediaPlayer != null && _isPrepared.value) {
                 mediaPlayer!!.currentPosition.toLong()
             } else {
-                -1L
+                requestedStartPositionMs
             }
         } catch (_: Exception) {
-            -1L
+            requestedStartPositionMs
         }
     }
 
     fun getDuration(): Long {
         return try {
-            if (mediaPlayer != null && !usingSynth) {
+            if (mediaPlayer != null && _isPrepared.value) {
                 mediaPlayer!!.duration.toLong()
             } else {
                 -1L
@@ -207,94 +238,6 @@ class PodcastAudioManager(private val context: Context) {
         } catch (_: Exception) {
             -1L
         }
-    }
-
-    /**
-     * Ambient Audio Synthesizer:
-     * Generates a warm, relaxing low-frequency binaural drone/ambient sound (220Hz / 330Hz harmonious chord)
-     * using Android's native AudioTrack API. This guarantees real, audible audio on any physical
-     * device or emulator even when streaming placeholder podcast links or offline without cached mp3 files.
-     */
-    private fun startAmbientAudioSynth() {
-        stopAmbientAudioSynth()
-        usingSynth = true
-        val sampleRate = 22050
-        val bufferSize = AudioTrack.getMinBufferSize(
-            sampleRate,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        ).coerceAtLeast(sampleRate / 2)
-
-        try {
-            val track = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(bufferSize)
-                    .setTransferMode(AudioTrack.MODE_STREAM)
-                    .build()
-            } else {
-                @Suppress("DEPRECATION")
-                AudioTrack(
-                    AudioManager.STREAM_MUSIC,
-                    sampleRate,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    bufferSize,
-                    AudioTrack.MODE_STREAM
-                )
-            }
-
-            track.play()
-            audioTrack = track
-
-            synthJob = scope.launch {
-                val buffer = ShortArray(1024)
-                var phase1 = 0.0
-                var phase2 = 0.0
-                val freq1 = 220.0 // A3 warm tone
-                val freq2 = 277.18 // C#4 major chord harmonic
-                val twoPi = 2.0 * Math.PI
-
-                while (isActive && isPlaying) {
-                    for (i in buffer.indices) {
-                        val sample = (sin(phase1) * 0.35 + sin(phase2) * 0.25) * 32767.0 * 0.25
-                        buffer[i] = sample.toInt().toShort()
-
-                        phase1 += (freq1 * twoPi) / sampleRate
-                        if (phase1 > twoPi) phase1 -= twoPi
-
-                        phase2 += (freq2 * twoPi) / sampleRate
-                        if (phase2 > twoPi) phase2 -= twoPi
-                    }
-                    track.write(buffer, 0, buffer.size)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e("PodcastAudioManager", "Failed to start ambient synth", e)
-        }
-    }
-
-    private fun stopAmbientAudioSynth() {
-        synthJob?.cancel()
-        synthJob = null
-        try {
-            audioTrack?.pause()
-            audioTrack?.flush()
-            audioTrack?.release()
-            audioTrack = null
-        } catch (_: Exception) {}
     }
 
     fun release() {

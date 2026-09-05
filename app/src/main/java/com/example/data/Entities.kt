@@ -32,7 +32,8 @@ data class EpisodeEntity(
     val isCompleted: Boolean = false,
     val isFavorite: Boolean = false,
     val adTimestampsSeconds: String = "", // e.g. "45,210" for ads at 45s and 210s
-    val chapters: String = "" // e.g. "0:Intro|120:Topic 1|480:Topic 2"
+    val chapters: String = "", // e.g. "0:Intro|120:Topic 1|480:Topic 2"
+    val transcript: String = "" // Timestamped podcast transcript content
 )
 
 @Entity(tableName = "sync_logs")

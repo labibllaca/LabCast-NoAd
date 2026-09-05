@@ -48,6 +48,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
+    val isBuffering: StateFlow<Boolean> = audioManager.isBuffering
+
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
 
@@ -73,6 +75,23 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     parsed
                 }
+            } else {
+                emptyList()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Podcast Transcript & Ad String Segments State
+    val transcriptSegments: StateFlow<List<TranscriptSegment>> = _currentPlayingEpisode
+        .map { ep ->
+            if (ep != null) {
+                TranscriptParser.parseOrGenerateTranscript(
+                    rawTranscript = ep.transcript.ifEmpty { null },
+                    episodeTitle = ep.title,
+                    episodeDescription = ep.description,
+                    durationSeconds = ep.durationSeconds,
+                    chapters = ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds)
+                )
             } else {
                 emptyList()
             }
@@ -806,15 +825,21 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 delay(250) // Update position every 250ms for smooth UI progress
                 val current = _currentPlayingEpisode.value ?: break
 
-                val realPosition = audioManager.getCurrentPosition()
-                val newPosition = if (realPosition > 0) {
-                    realPosition
-                } else {
-                    _playbackPositionMs.value + 250
+                if (audioManager.isBuffering.value) {
+                    // Do not increment playback position while player is buffering stream over network
+                    if (++loopTickCount % 12 == 0) {
+                        val consoleLine = "[PLAYER CONSOLE] Buffering audio stream for '${current.title}'..."
+                        Log.i("PodcastPlayer", consoleLine)
+                        System.out.println(consoleLine)
+                    }
+                    continue
                 }
+
+                val realPosition = audioManager.getCurrentPosition()
+                val newPosition = if (realPosition >= 0) realPosition else _playbackPositionMs.value
                 val durationMs = current.durationSeconds * 1000
 
-                if (newPosition >= durationMs) {
+                if (newPosition >= durationMs && durationMs > 0) {
                     handleEpisodeCompletion()
                     break
                 } else {
@@ -826,7 +851,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         val posSec = newPosition / 1000
                         val durSec = current.durationSeconds
                         val energy = (_currentAudioEnergy.value * 100).toInt()
-                        val consoleLine = "[PLAYER CONSOLE] Playing '${current.title}' | Pos: ${posSec}s / ${durSec}s (${(newPosition * 100 / durationMs)}%) | RMS: $energy% | AdActive: ${_isAdActive.value} | AutoSkip: ${_isAutoAdSkipEnabled.value}"
+                        val consoleLine = "[PLAYER CONSOLE] Playing '${current.title}' | Pos: ${posSec}s / ${durSec}s (${if (durationMs > 0) (newPosition * 100 / durationMs) else 0}%) | RMS: $energy% | AdActive: ${_isAdActive.value} | AutoSkip: ${_isAutoAdSkipEnabled.value}"
                         Log.i("PodcastPlayer", consoleLine)
                         System.out.println(consoleLine)
                     }

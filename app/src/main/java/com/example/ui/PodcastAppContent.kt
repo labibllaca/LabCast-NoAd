@@ -2243,6 +2243,7 @@ fun MiniPlayerSection(
     onExpand: () -> Unit
 ) {
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val isBuffering by viewModel.isBuffering.collectAsStateWithLifecycle()
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
     val isAdActive by viewModel.isAdActive.collectAsStateWithLifecycle()
 
@@ -2283,9 +2284,25 @@ fun MiniPlayerSection(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                // Metadata / Ad Active
+                // Metadata / Buffering / Ad Active
                 Column(modifier = Modifier.weight(1f)) {
-                    if (isAdActive) {
+                    if (isBuffering) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                color = CyberGreen,
+                                strokeWidth = 1.5.dp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "BUFFERING STREAM...",
+                                color = CyberGreen,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    } else if (isAdActive) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
@@ -2320,7 +2337,13 @@ fun MiniPlayerSection(
                 }
 
                 // Controls inside mini player
-                if (isAdActive) {
+                if (isBuffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp).padding(2.dp),
+                        color = CyberGreen,
+                        strokeWidth = 2.dp
+                    )
+                } else if (isAdActive) {
                     Button(
                         onClick = { viewModel.skipAdManually() },
                         colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
@@ -2370,11 +2393,13 @@ fun FullPlayerScreen(
 ) {
     val episode by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val isBuffering by viewModel.isBuffering.collectAsStateWithLifecycle()
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
     val isAdActive by viewModel.isAdActive.collectAsStateWithLifecycle()
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
     val chapters by viewModel.currentChapters.collectAsStateWithLifecycle()
     val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
+    val transcriptSegments by viewModel.transcriptSegments.collectAsStateWithLifecycle()
     val waveformAmplitudes by viewModel.waveformAmplitudes.collectAsStateWithLifecycle()
     val acousticAdSegments by viewModel.acousticAdSegments.collectAsStateWithLifecycle()
     val currentAudioEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
@@ -2383,6 +2408,7 @@ fun FullPlayerScreen(
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
 
     var showChaptersSheet by remember { mutableStateOf(false) }
+    var showTranscriptSheet by remember { mutableStateOf(false) }
 
     if (episode == null) return
 
@@ -2437,32 +2463,66 @@ fun FullPlayerScreen(
                     )
                 }
 
-                // Chapters button in header
-                Surface(
-                    onClick = { showChaptersSheet = true },
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.15f) else DarkCharcoal,
-                    border = BorderStroke(1.dp, if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.6f) else BorderGray),
-                    modifier = Modifier.testTag("player_chapters_button")
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // Chapters button in header
+                    Surface(
+                        onClick = { showChaptersSheet = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.15f) else DarkCharcoal,
+                        border = BorderStroke(1.dp, if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.6f) else BorderGray),
+                        modifier = Modifier.testTag("player_chapters_button")
                     ) {
-                        Icon(
-                            Icons.Default.FormatListBulleted,
-                            contentDescription = "Chapters",
-                            tint = if (chapters.isNotEmpty()) CyberGreen else TextGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (chapters.isNotEmpty()) "Chapters (${chapters.size})" else "Chapters",
-                            color = if (chapters.isNotEmpty()) CyberGreen else TextGray,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.5.sp
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.FormatListBulleted,
+                                contentDescription = "Chapters",
+                                tint = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (chapters.isNotEmpty()) "Chapters (${chapters.size})" else "Chapters",
+                                color = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
+                    // Transcript button in header
+                    Surface(
+                        onClick = { showTranscriptSheet = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = 0.15f) else DarkCharcoal,
+                        border = BorderStroke(1.dp, if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = 0.6f) else BorderGray),
+                        modifier = Modifier.testTag("player_transcript_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Subtitles,
+                                contentDescription = "Transcript",
+                                tint = if (transcriptSegments.isNotEmpty()) AdGold else TextGray,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Transcript",
+                                color = if (transcriptSegments.isNotEmpty()) AdGold else TextGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
                     }
                 }
 
@@ -2496,7 +2556,7 @@ fun FullPlayerScreen(
                 )
             }
 
-            // Titles & Active Chapter Badge
+            // Titles & Active Chapter / Buffering Badge
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
@@ -2518,7 +2578,33 @@ fun FullPlayerScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                if (activeChapter != null) {
+                if (isBuffering) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = CyberGreen.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
+                        modifier = Modifier.testTag("buffering_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(12.dp),
+                                color = CyberGreen,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Buffering audio stream from server...",
+                                color = CyberGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                } else if (activeChapter != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(
                         onClick = { showChaptersSheet = true },
@@ -2899,6 +2985,345 @@ fun FullPlayerScreen(
                 },
                 onDismiss = { showChaptersSheet = false }
             )
+        }
+
+        // Transcript & Sponsor String Detection Modal Bottom Sheet
+        if (showTranscriptSheet) {
+            TranscriptBottomSheet(
+                transcriptSegments = transcriptSegments,
+                playbackPositionMs = playbackPositionMs,
+                episodeTitle = episode!!.title,
+                onSegmentSelected = { startMs ->
+                    viewModel.seekTo(startMs)
+                    showTranscriptSheet = false
+                },
+                onDismiss = { showTranscriptSheet = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TranscriptBottomSheet(
+    transcriptSegments: List<com.example.data.TranscriptSegment>,
+    playbackPositionMs: Long,
+    episodeTitle: String,
+    onSegmentSelected: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var filterSponsorsOnly by remember { mutableStateOf(false) }
+
+    val filteredSegments = remember(transcriptSegments, searchQuery, filterSponsorsOnly) {
+        transcriptSegments.filter { seg ->
+            val matchesQuery = searchQuery.isBlank() ||
+                    seg.text.contains(searchQuery, ignoreCase = true) ||
+                    seg.speaker.contains(searchQuery, ignoreCase = true) ||
+                    (seg.sponsorBrand?.contains(searchQuery, ignoreCase = true) == true)
+            val matchesFilter = !filterSponsorsOnly || seg.isSponsor
+            matchesQuery && matchesFilter
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ObsidianBlack,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = BorderGray)
+        },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag("transcript_bottom_sheet")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Subtitles,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "PODCAST TRANSCRIPT",
+                            color = TextWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        val sponsorCount = transcriptSegments.count { it.isSponsor }
+                        if (sponsorCount > 0) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = AdGold.copy(alpha = 0.2f),
+                                border = BorderStroke(1.dp, AdGold)
+                            ) {
+                                Text(
+                                    text = "$sponsorCount Ads Identified",
+                                    color = AdGold,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = episodeTitle,
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("close_transcript_sheet")
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextGray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Search & Ad Filter Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search transcript or sponsor strings...", color = TextGray, fontSize = 12.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = CyberGreen,
+                        unfocusedBorderColor = BorderGray,
+                        focusedTextColor = TextWhite,
+                        unfocusedTextColor = TextWhite
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .testTag("input_transcript_search"),
+                    shape = RoundedCornerShape(12.dp),
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = TextGray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                FilterChip(
+                    selected = filterSponsorsOnly,
+                    onClick = { filterSponsorsOnly = !filterSponsorsOnly },
+                    label = { Text("Ads Only", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.MonetizationOn,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = AdGold.copy(alpha = 0.25f),
+                        selectedLabelColor = AdGold,
+                        selectedLeadingIconColor = AdGold,
+                        containerColor = DarkCharcoal,
+                        labelColor = TextGray,
+                        iconColor = TextGray
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        borderColor = BorderGray,
+                        selectedBorderColor = AdGold,
+                        enabled = true,
+                        selected = filterSponsorsOnly
+                    ),
+                    modifier = Modifier.testTag("filter_ads_only_chip")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            if (filteredSegments.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.Subtitles,
+                            contentDescription = null,
+                            tint = TextGray,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No Transcript Segments Found",
+                            color = TextWhite,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Try clearing search keywords or switching off the 'Ads Only' filter.",
+                            color = TextGray,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                val currentSec = playbackPositionMs / 1000
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 440.dp)
+                ) {
+                    items(filteredSegments) { segment ->
+                        val isCurrentLine = currentSec >= segment.startTimeSeconds &&
+                                currentSec < (segment.startTimeSeconds + 30)
+
+                        Card(
+                            onClick = { onSegmentSelected(segment.startTimeSeconds * 1000L) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = when {
+                                    segment.isSponsor -> AdGold.copy(alpha = 0.12f)
+                                    isCurrentLine -> CyberGreen.copy(alpha = 0.12f)
+                                    else -> DarkCharcoal
+                                }
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = if (isCurrentLine || segment.isSponsor) 1.5.dp else 1.dp,
+                                    color = when {
+                                        segment.isSponsor -> AdGold
+                                        isCurrentLine -> CyberGreen
+                                        else -> BorderGray
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .testTag("transcript_item_${segment.startTimeSeconds}")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (segment.isSponsor) AdGold.copy(alpha = 0.2f) else CyberGreen.copy(alpha = 0.2f),
+                                            border = BorderStroke(1.dp, if (segment.isSponsor) AdGold else CyberGreen)
+                                        ) {
+                                            Text(
+                                                text = segment.formattedTime(),
+                                                color = if (segment.isSponsor) AdGold else CyberGreen,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = segment.speaker,
+                                            color = TextWhite,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+
+                                    if (segment.isSponsor) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = AdGold.copy(alpha = 0.25f),
+                                            border = BorderStroke(1.dp, AdGold)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.MonetizationOn,
+                                                    contentDescription = null,
+                                                    tint = AdGold,
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "AD / SPONSOR STRING ${segment.sponsorBrand?.let { "($it)" } ?: ""}",
+                                                    color = AdGold,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                            }
+                                        }
+                                    } else if (isCurrentLine) {
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = CyberGreen.copy(alpha = 0.2f),
+                                            border = BorderStroke(1.dp, CyberGreen)
+                                        ) {
+                                            Text(
+                                                text = "CURRENTLY PLAYING",
+                                                color = CyberGreen,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = segment.text,
+                                    color = if (segment.isSponsor) TextWhite else TextWhite.copy(alpha = 0.9f),
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
