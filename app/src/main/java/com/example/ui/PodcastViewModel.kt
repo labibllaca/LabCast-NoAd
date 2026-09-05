@@ -7,6 +7,8 @@ import com.example.data.*
 import com.example.network.PodcastApiClient
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
+import com.example.player.PodcastAudioManager
+import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -18,6 +20,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val database = PodcastDatabase.getDatabase(application)
     private val repository = PodcastRepository(database.podcastDao())
+    private val audioManager = PodcastAudioManager(application)
 
     // UI state flows
     val podcasts: StateFlow<List<PodcastEntity>> = repository.allPodcasts
@@ -202,6 +205,14 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             _playbackPositionMs.value = episode.playbackPositionMs
             _isAdActive.value = false
             _isPlaying.value = true
+
+            // Trigger real audio engine
+            val audioTarget = episode.downloadLocalPath?.takeIf { it.isNotEmpty() } ?: episode.audioUrl
+            audioManager.play(audioTarget, episode.playbackPositionMs)
+            audioManager.onCompletionListener = {
+                handleEpisodeCompletion()
+            }
+
             startPlaybackJob()
 
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${episode.title}'")
@@ -212,6 +223,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
         if (_isPlaying.value) {
             _isPlaying.value = false
+            audioManager.pause()
             stopPlaybackJob()
             viewModelScope.launch {
                 repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
@@ -219,6 +231,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
         } else {
             _isPlaying.value = true
+            audioManager.resume()
             startPlaybackJob()
             viewModelScope.launch {
                 repository.addSyncLog("Pixel 9 Pro (This Device)", "Resumed '${current.title}'")
@@ -231,6 +244,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val durationMs = current.durationSeconds * 1000
         val target = positionMs.coerceIn(0L, durationMs)
         _playbackPositionMs.value = target
+        audioManager.seekTo(target)
 
         // If seeking directly past or before, check ads
         checkAdDetection(target)
@@ -438,16 +452,17 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Queued ${episodesToDownload.size} episodes for batch offline download")
 
             for (episode in episodesToDownload) {
-                // Download each episode
-                for (progress in 1..8) {
-                    val fraction = progress / 8.0f
-                    _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to fraction)
-                    delay(120)
+                val filePath = EpisodeDownloader.downloadToFile(
+                    context = getApplication(),
+                    url = episode.audioUrl,
+                    episodeId = episode.id
+                ) { progress ->
+                    _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
                 }
 
                 val updated = episode.copy(
                     isDownloaded = true,
-                    downloadLocalPath = "/local/podcasts/${episode.id}.mp3"
+                    downloadLocalPath = filePath ?: "/local/podcasts/${episode.id}.mp3"
                 )
                 repository.updateEpisode(updated)
                 _downloadProgressMap.value = _downloadProgressMap.value - episode.id
@@ -460,24 +475,25 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Download Simulation
+    // Real Episode Download
     fun downloadEpisode(episode: EpisodeEntity) {
         if (episode.isDownloaded) return
         viewModelScope.launch {
             // Check if downloading already in progress
             if (_downloadProgressMap.value.containsKey(episode.id)) return@launch
 
-            // Simulate download progress in increments
-            for (progress in 1..10) {
-                val fraction = progress / 10.0f
-                _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to fraction)
-                delay(200) // short latency for download effect
+            val filePath = EpisodeDownloader.downloadToFile(
+                context = getApplication(),
+                url = episode.audioUrl,
+                episodeId = episode.id
+            ) { progress ->
+                _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
             }
 
             // Mark as downloaded in DB
             val updated = episode.copy(
                 isDownloaded = true,
-                downloadLocalPath = "/local/podcasts/${episode.id}.mp3"
+                downloadLocalPath = filePath ?: "/local/podcasts/${episode.id}.mp3"
             )
             repository.updateEpisode(updated)
 
@@ -495,6 +511,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteDownload(episode: EpisodeEntity) {
         viewModelScope.launch {
+            EpisodeDownloader.deleteDownloadedFile(episode.downloadLocalPath)
             val updated = episode.copy(isDownloaded = false, downloadLocalPath = null)
             repository.updateEpisode(updated)
             if (_currentPlayingEpisode.value?.id == episode.id) {
@@ -592,21 +609,36 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             while (_isPlaying.value) {
                 delay(250) // Update position every 250ms for smooth UI progress
                 val current = _currentPlayingEpisode.value ?: break
-                val newPosition = _playbackPositionMs.value + 250
+
+                val realPosition = audioManager.getCurrentPosition()
+                val newPosition = if (realPosition > 0) {
+                    realPosition
+                } else {
+                    _playbackPositionMs.value + 250
+                }
                 val durationMs = current.durationSeconds * 1000
 
                 if (newPosition >= durationMs) {
-                    // Episode completed
-                    _playbackPositionMs.value = durationMs
-                    _isPlaying.value = false
-                    repository.updateEpisodeProgress(current.id, durationMs, true)
-                    repository.addSyncLog("Pixel 9 Pro (This Device)", "Completed listening to '${current.title}'")
+                    handleEpisodeCompletion()
                     break
                 } else {
                     _playbackPositionMs.value = newPosition
                     checkAdDetection(newPosition)
                 }
             }
+        }
+    }
+
+    private fun handleEpisodeCompletion() {
+        val current = _currentPlayingEpisode.value ?: return
+        val durationMs = current.durationSeconds * 1000
+        _playbackPositionMs.value = durationMs
+        _isPlaying.value = false
+        audioManager.stop()
+        stopPlaybackJob()
+        viewModelScope.launch {
+            repository.updateEpisodeProgress(current.id, durationMs, true)
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Completed listening to '${current.title}'")
         }
     }
 
@@ -653,6 +685,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _playbackPositionMs.value
         val nextPosition = current + skipAmountMs
         _playbackPositionMs.value = nextPosition
+        audioManager.seekTo(nextPosition)
 
         val episode = _currentPlayingEpisode.value
         if (episode != null) {
@@ -826,5 +859,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         super.onCleared()
         stopPlaybackJob()
+        audioManager.release()
     }
 }

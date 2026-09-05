@@ -368,7 +368,7 @@ object CuratedPodcastCatalog {
                 description = "Host and guest experts discuss core methodologies, empirical research, and real-world implications of these emergent systems for the modern era.",
                 durationSeconds = duration,
                 publishDate = "2026-09-0${(7 - i).coerceAtLeast(1)}",
-                audioUrl = "https://example.com/audio/${showTitle.take(5).lowercase()}_$i.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${((i - 1) % 6) + 1}.mp3",
                 adTimestampsSeconds = "30,${duration / 2}"
             )
         }

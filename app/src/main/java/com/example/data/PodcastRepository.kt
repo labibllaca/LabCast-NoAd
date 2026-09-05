@@ -104,7 +104,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "In this episode, we dissect how autonomous coding agents are transitioning from autocomplete tools to system-level developers. We explore their inner cognitive architecture and what this means for the software engineering discipline.",
                 durationSeconds = 1200, // 20 minutes
                 publishDate = "2026-09-01",
-                audioUrl = "https://example.com/audio/agentic_ai.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "45,360,780" // Ads at 45s, 6 min, 13 min
@@ -118,10 +118,10 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "A philosophical debate on whether large neural networks can possess genuine artistic intuition, or if they are simply executing high-dimensional pattern matching on human intellectual property.",
                 durationSeconds = 900, // 15 minutes
                 publishDate = "2026-08-25",
-                audioUrl = "https://example.com/audio/machine_creativity.mp3",
-                isDownloaded = true, // Pre-downloaded for offline demo
-                downloadLocalPath = "/local/podcasts/ep_1_2.mp3",
-                playbackPositionMs = 240000, // 4 mins already listened
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+                isDownloaded = false,
+                downloadLocalPath = null,
+                playbackPositionMs = 0,
                 adTimestampsSeconds = "120,540"
             ),
             EpisodeEntity(
@@ -133,7 +133,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "NASA's upcoming clipper missions are designed to scan Jupiter's moon Europa. Join us as we speak with lead astrobiologists about the chemistry of subsurface oceans and what thermal vents might be hiding.",
                 durationSeconds = 1800, // 30 mins
                 publishDate = "2026-09-03",
-                audioUrl = "https://example.com/audio/europa.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "30,900"
@@ -147,7 +147,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "We can't see it, touch it, or directly detect it, yet it makes up over 80% of all matter in the universe. We review the latest subterranean particle detector experiments hoping to catch a stray WIMP.",
                 durationSeconds = 1500, // 25 mins
                 publishDate = "2026-08-20",
-                audioUrl = "https://example.com/audio/dark_matter.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "15,600"
@@ -161,9 +161,9 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "Settle down with this 10-minute slow-frequency breathing exercise. Specifically tailored to quiet anxiety, lower blood pressure, and ease transition into restorative deep sleep.",
                 durationSeconds = 600, // 10 mins
                 publishDate = "2026-09-04",
-                audioUrl = "https://example.com/audio/breathing.mp3",
-                isDownloaded = true, // Pre-downloaded for offline demo
-                downloadLocalPath = "/local/podcasts/ep_3_1.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
+                isDownloaded = false,
+                downloadLocalPath = null,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "15" // Quick ad near the start to demonstrate Skipper
             ),
@@ -176,7 +176,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 description = "During the height of the Cold War, a rogue satellite signal began broadcasting encrypted coordinates over the Pacific. We decode the declassified documents uncovering a massive naval intelligence operation.",
                 durationSeconds = 2400, // 40 mins
                 publishDate = "2026-08-28",
-                audioUrl = "https://example.com/audio/cold_orbit.mp3",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "600,1200"
