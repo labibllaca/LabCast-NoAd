@@ -38,6 +38,12 @@ interface PodcastDao {
     @Query("UPDATE episodes SET playbackPositionMs = :positionMs, isCompleted = :isCompleted WHERE id = :episodeId")
     suspend fun updatePlaybackProgress(episodeId: String, positionMs: Long, isCompleted: Boolean)
 
+    @Query("UPDATE episodes SET playbackPositionMs = 0, isCompleted = 0")
+    suspend fun clearAllHistory()
+
+    @Query("UPDATE episodes SET playbackPositionMs = 0, isCompleted = 0 WHERE id = :episodeId")
+    suspend fun clearEpisodeHistory(episodeId: String)
+
     @Query("UPDATE episodes SET isDownloaded = :isDownloaded, downloadLocalPath = :localPath WHERE id = :episodeId")
     suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?)
 

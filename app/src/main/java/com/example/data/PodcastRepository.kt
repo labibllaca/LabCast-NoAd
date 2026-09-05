@@ -26,6 +26,14 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.updatePlaybackProgress(episodeId, positionMs, isCompleted)
     }
 
+    suspend fun clearAllHistory() {
+        podcastDao.clearAllHistory()
+    }
+
+    suspend fun clearEpisodeHistory(episodeId: String) {
+        podcastDao.clearEpisodeHistory(episodeId)
+    }
+
     suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?) {
         podcastDao.updateDownloadStatus(episodeId, isDownloaded, localPath)
     }

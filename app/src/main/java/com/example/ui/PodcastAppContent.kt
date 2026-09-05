@@ -130,10 +130,10 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         modifier = Modifier.testTag("nav_tab_offline")
                     )
                     NavigationBarItem(
-                        selected = activeTab == PodcastViewModel.Tab.SYNC_HUB,
-                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.SYNC_HUB) },
-                        icon = { Icon(Icons.Default.Sync, contentDescription = "Sync Hub") },
-                        label = { Text("Sync Hub") },
+                        selected = activeTab == PodcastViewModel.Tab.VERLAUF,
+                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.VERLAUF) },
+                        icon = { Icon(Icons.Default.History, contentDescription = "Verlauf") },
+                        label = { Text("Verlauf") },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
                             selectedTextColor = CyberGreen,
@@ -141,7 +141,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                             unselectedIconColor = colors.textMuted,
                             unselectedTextColor = colors.textMuted
                         ),
-                        modifier = Modifier.testTag("nav_tab_sync")
+                        modifier = Modifier.testTag("nav_tab_verlauf")
                     )
                     NavigationBarItem(
                         selected = activeTab == PodcastViewModel.Tab.SETTINGS,
@@ -204,101 +204,8 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                 when (activeTab) {
                     PodcastViewModel.Tab.DISCOVER -> DiscoverScreen(viewModel)
                     PodcastViewModel.Tab.DOWNLOADS -> DownloadsScreen(viewModel)
-                    PodcastViewModel.Tab.SYNC_HUB -> SyncHubScreen(viewModel)
+                    PodcastViewModel.Tab.VERLAUF -> VerlaufScreen(viewModel)
                     PodcastViewModel.Tab.SETTINGS -> SettingsScreen(viewModel)
-                }
-            }
-
-            // Remote Sync Notification Banner
-            showRemoteSyncPrompt?.let { syncInfo ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .background(DarkCharcoal, RoundedCornerShape(16.dp))
-                        .border(1.dp, CyberGreen.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                        .align(Alignment.TopCenter)
-                        .clickable { }
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.CloudDownload,
-                                contentDescription = "Cloud Update",
-                                tint = CyberGreen,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Cross-Device Progress Merge",
-                                color = TextWhite,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "'${syncInfo.deviceName}' has a more recent playback progress for:",
-                            color = TextGray,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = syncInfo.episodeTitle,
-                            color = TextWhite,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "New Position: ${viewModel.formatDuration(syncInfo.remotePositionMs / 1000)}",
-                            color = CyberGreenGlow,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.End,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            TextButton(
-                                onClick = { viewModel.rejectRemoteSync() },
-                                colors = ButtonDefaults.textButtonColors(contentColor = TextGray)
-                            ) {
-                                Text("Ignore")
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = { viewModel.acceptRemoteSync() },
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberGreen, contentColor = ObsidianBlack)
-                            ) {
-                                Text("Sync Now", fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Syncing overlay spinner
-            if (isSyncing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(ObsidianBlack.copy(alpha = 0.85f))
-                        .clickable(enabled = false) {},
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = CyberGreen, modifier = Modifier.size(56.dp))
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Syncing across LabCast cloud database...",
-                            color = TextWhite,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp
-                        )
-                    }
                 }
             }
         }
@@ -1492,26 +1399,26 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
 }
 
 // ==========================================
-// 3. SYNC HUB TAB (SYNC CENTER)
+// 3. VERLAUF TAB (LISTENING HISTORY)
 // ==========================================
 @Composable
-fun SyncHubScreen(viewModel: PodcastViewModel) {
-    val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
-    val currentEpisode by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
-    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
-    val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
-    val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
-    val audioWaveEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
+fun VerlaufScreen(viewModel: PodcastViewModel) {
+    val historyEpisodes by viewModel.historyEpisodes.collectAsStateWithLifecycle()
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
+    var filterMode by remember { mutableStateOf(0) } // 0: Alle, 1: In Wiedergabe, 2: Abgeschlossen
 
-    // Mock companions
-    val devices = listOf(
-        DeviceItem("Pixel 9 Pro", "Active Now", Icons.Default.PhoneAndroid, true),
-        DeviceItem("iPhone 15 Pro", "Synced 2m ago", Icons.Default.PhoneIphone, false),
-        DeviceItem("iPad Air", "Synced 1h ago", Icons.Default.TabletMac, false),
-        DeviceItem("Chrome Player", "Synced 5h ago", Icons.Default.LaptopMac, false)
-    )
+    val filteredList = remember(historyEpisodes, filterMode) {
+        when (filterMode) {
+            1 -> historyEpisodes.filter { !it.isCompleted && it.percentageListened < 100 }
+            2 -> historyEpisodes.filter { it.isCompleted || it.percentageListened >= 100 }
+            else -> historyEpisodes
+        }
+    }
 
-    val currentDurationMs = (currentEpisode?.durationSeconds ?: 0L) * 1000L
+    val totalListenedSec = historyEpisodes.sumOf { it.listenedPositionMs / 1000 }
+    val totalHours = totalListenedSec / 3600
+    val totalMins = (totalListenedSec % 3600) / 60
+    val completedCount = historyEpisodes.count { it.isCompleted || it.percentageListened >= 100 }
 
     LazyColumn(
         modifier = Modifier
@@ -1521,379 +1428,458 @@ fun SyncHubScreen(viewModel: PodcastViewModel) {
     ) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Multi-Device Sync & System Hub",
-                color = TextWhite,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black
-            )
-            Text(
-                text = "Synchronize listening progress dynamically with cloud database & monitor system player console.",
-                color = TextGray,
-                fontSize = 12.sp
-            )
-        }
-
-        // ==========================================
-        // SYSTEM CONSOLE AUDIO PLAYER MONITOR
-        // ==========================================
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1217)),
-                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.6f)),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("card_system_console_player")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Header with Live Terminal Indicator
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Verlauf",
+                        color = TextWhite,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "Übersicht deiner bisher angehörten Folgen & Fortschritt",
+                        color = TextGray,
+                        fontSize = 12.sp
+                    )
+                }
+
+                if (historyEpisodes.isNotEmpty()) {
+                    TextButton(
+                        onClick = { showClearConfirmDialog = true },
+                        colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed),
+                        modifier = Modifier.testTag("button_clear_history")
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isPlaying) CyberGreen else AdGold)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                "SYSTEM CONSOLE AUDIO ENGINE",
-                                color = CyberGreen,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isPlaying) CyberGreen.copy(alpha = 0.2f) else DarkCharcoal
-                        ) {
-                            Text(
-                                text = if (isPlaying) "OUTPUT: LIVE" else if (currentEpisode != null) "OUTPUT: PAUSED" else "IDLE",
-                                color = if (isPlaying) CyberGreen else TextGray,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (currentEpisode != null) {
-                        // Currently Loaded Episode in System Console
-                        Text(
-                            text = currentEpisode?.title ?: "Unknown Track",
-                            color = TextWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
                         )
-                        Text(
-                            text = currentEpisode?.podcastTitle ?: "Podcast Audio Stream",
-                            color = TextGray,
-                            fontSize = 11.sp,
-                            maxLines = 1
-                        )
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Progress Bar
-                        LinearProgressIndicator(
-                            progress = { if (currentDurationMs > 0) playbackPositionMs.toFloat() / currentDurationMs.toFloat() else 0f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp)),
-                            color = CyberGreen,
-                            trackColor = BorderGray
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(viewModel.formatDuration(playbackPositionMs / 1000), color = TextGray, fontSize = 10.sp)
-                            Text(
-                                "RMS Energy: ${(audioWaveEnergy * 100).toInt()}%",
-                                color = if (audioWaveEnergy > 0.82f) AdGold else CyberGreenGlow,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(viewModel.formatDuration(currentDurationMs / 1000), color = TextGray, fontSize = 10.sp)
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Console Controls & Auto Ad-Skipper Status
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable { viewModel.toggleAutoAdSkip() }
-                            ) {
-                                Icon(
-                                    imageVector = if (isAutoAdSkipEnabled) Icons.Default.AutoAwesome else Icons.Default.DoNotDisturb,
-                                    contentDescription = null,
-                                    tint = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isAutoAdSkipEnabled) "Wave Ad-Skip ON" else "Wave Ad-Skip OFF",
-                                    color = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = { viewModel.skipBackward() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.Replay10, contentDescription = "Rewind", tint = TextWhite, modifier = Modifier.size(20.dp))
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.togglePlayPause() },
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(CyberGreen, CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                        contentDescription = if (isPlaying) "Pause" else "Play",
-                                        tint = ObsidianBlack,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = { viewModel.skipForward() },
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(Icons.Default.Forward30, contentDescription = "Forward", tint = TextWhite, modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-                    } else {
-                        // Empty state in System Console
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(DarkCharcoal.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.GraphicEq, contentDescription = null, tint = TextGray, modifier = Modifier.size(24.dp))
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text("No Active Playback Stream", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                Text("Select any episode in Discover to start the system console stream.", color = TextGray, fontSize = 10.sp)
-                            }
-                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Verlauf leeren", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
-        // Active devices list
-        item {
-            Text("Registered Devices", color = TextWhite, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        }
-
-        item {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(devices) { dev ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+        // Stats Summary Cards
+        if (historyEpisodes.isNotEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.4f)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
                         modifier = Modifier
-                            .width(130.dp)
-                            .border(1.dp, if (dev.isActive) CyberGreen else BorderGray, RoundedCornerShape(12.dp)),
-                        shape = RoundedCornerShape(12.dp)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(
-                                dev.icon,
-                                contentDescription = dev.name,
-                                tint = if (dev.isActive) CyberGreen else TextGray,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = dev.name,
+                                text = "${historyEpisodes.size}",
+                                color = CyberGreen,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "Angehört",
+                                color = TextGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(32.dp)
+                                .background(BorderGray)
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = if (totalHours > 0) "${totalHours}h ${totalMins}m" else "${totalMins}m",
                                 color = TextWhite,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black
                             )
                             Text(
-                                text = dev.lastSeen,
-                                color = if (dev.isActive) CyberGreenGlow else TextGray,
-                                fontSize = 9.sp,
+                                text = "Hördauer",
+                                color = TextGray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .width(1.dp)
+                                .height(32.dp)
+                                .background(BorderGray)
+                        )
+
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "$completedCount",
+                                color = AdGold,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "Beendet",
+                                color = TextGray,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
                     }
                 }
             }
-        }
 
-        // Action controls
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.triggerCloudSyncNow() },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberGreen, contentColor = ObsidianBlack),
-                    modifier = Modifier.weight(1f).testTag("button_manual_sync"),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Sync This Device", fontWeight = FontWeight.Black, fontSize = 12.sp)
-                }
-
-                Button(
-                    onClick = { viewModel.simulateRemoteDeviceUpdate() },
-                    colors = ButtonDefaults.buttonColors(containerColor = DarkCharcoal, contentColor = TextWhite),
-                    border = BorderStroke(1.dp, BorderGray),
-                    modifier = Modifier.weight(1f).testTag("button_simulate_update"),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(Icons.Default.Devices, contentDescription = null, tint = CyberGreenGlow, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Simulate Remote Update", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                }
-            }
-        }
-
-        // Timeline of sync logs
-        item {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "Sync Activity History",
-                    color = TextWhite,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                TextButton(
-                    onClick = { viewModel.clearHistory() },
-                    colors = ButtonDefaults.textButtonColors(contentColor = ErrorRed)
-                ) {
-                    Text("Clear", fontSize = 12.sp)
-                }
-            }
-        }
-
-        if (syncLogs.isEmpty()) {
+            // Filter Row (Alle, In Wiedergabe, Abgeschlossen)
             item {
-                Box(
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = filterMode == 0,
+                        onClick = { filterMode = 0 },
+                        label = { Text("Alle (${historyEpisodes.size})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = CyberGreen.copy(alpha = 0.25f),
+                            selectedLabelColor = CyberGreen,
+                            containerColor = DarkCharcoal,
+                            labelColor = TextGray
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = BorderGray,
+                            selectedBorderColor = CyberGreen,
+                            enabled = true,
+                            selected = filterMode == 0
+                        ),
+                        modifier = Modifier.testTag("filter_history_all")
+                    )
+
+                    FilterChip(
+                        selected = filterMode == 1,
+                        onClick = { filterMode = 1 },
+                        label = { Text("In Wiedergabe (${historyEpisodes.count { !it.isCompleted && it.percentageListened < 100 }})", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = CyberGreen.copy(alpha = 0.25f),
+                            selectedLabelColor = CyberGreen,
+                            containerColor = DarkCharcoal,
+                            labelColor = TextGray
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = BorderGray,
+                            selectedBorderColor = CyberGreen,
+                            enabled = true,
+                            selected = filterMode == 1
+                        ),
+                        modifier = Modifier.testTag("filter_history_in_progress")
+                    )
+
+                    FilterChip(
+                        selected = filterMode == 2,
+                        onClick = { filterMode = 2 },
+                        label = { Text("Beendet ($completedCount)", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AdGold.copy(alpha = 0.25f),
+                            selectedLabelColor = AdGold,
+                            containerColor = DarkCharcoal,
+                            labelColor = TextGray
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = BorderGray,
+                            selectedBorderColor = AdGold,
+                            enabled = true,
+                            selected = filterMode == 2
+                        ),
+                        modifier = Modifier.testTag("filter_history_completed")
+                    )
+                }
+            }
+        }
+
+        // List Items
+        if (filteredList.isEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center
+                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp))
                 ) {
-                    Text("No sync events recorded yet.", color = TextGray, fontSize = 12.sp)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = null,
+                            tint = TextGray,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (historyEpisodes.isEmpty()) "Noch kein Hörverlauf vorhanden" else "Keine Folgen für diesen Filter",
+                            color = TextWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (historyEpisodes.isEmpty()) "Sobald du eine Podcast-Folge startest oder anhörst, wird sie hier mit Dauer und %-Fortschritt gespeichert." else "Wähle einen anderen Filter oben aus.",
+                            color = TextGray,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
                 }
             }
         } else {
-            items(syncLogs) { log ->
-                SyncLogItem(log = log)
+            items(filteredList, key = { it.episode.id }) { historyItem ->
+                VerlaufEpisodeCard(
+                    item = historyItem,
+                    viewModel = viewModel
+                )
             }
         }
 
         item {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
+    }
+
+    // Confirmation Dialog for clearing history
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            containerColor = DarkCharcoal,
+            title = {
+                Text(
+                    text = "Hörverlauf leeren?",
+                    color = TextWhite,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Möchtest du deinen gesamten Wiedergabeverlauf wirklich löschen? Der Fortschritt aller Folgen wird zurückgesetzt.",
+                    color = TextGray,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllHistory()
+                        showClearConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed, contentColor = TextWhite)
+                ) {
+                    Text("Ja, Verlauf löschen", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearConfirmDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextGray)
+                ) {
+                    Text("Abbrechen")
+                }
+            }
+        )
     }
 }
 
-data class DeviceItem(
-    val name: String,
-    val lastSeen: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-    val isActive: Boolean
-)
-
 @Composable
-fun SyncLogItem(log: SyncLogEntity) {
+fun VerlaufEpisodeCard(
+    item: PodcastViewModel.HistoryEpisodeItem,
+    viewModel: PodcastViewModel
+) {
+    val ep = item.episode
+    val currentPlaying by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val isCurrentEpPlaying = currentPlaying?.id == ep.id && isPlaying
+
+    val totalDurationFormatted = viewModel.formatDuration(item.durationSeconds)
+    val listenedFormatted = viewModel.formatDuration(item.listenedPositionMs / 1000)
+
     Card(
-        colors = CardDefaults.cardColors(containerColor = DarkCharcoal.copy(alpha = 0.5f)),
+        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+        shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderGray.copy(alpha = 0.6f), RoundedCornerShape(8.dp)),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .offset(y = 4.dp)
-                    .background(
-                        if (log.deviceName.contains("Error") || log.deviceName.contains("System")) AdGold else CyberGreen,
-                        CircleShape
-                    )
+            .border(
+                width = if (isCurrentEpPlaying) 1.5.dp else 1.dp,
+                color = if (isCurrentEpPlaying) CyberGreen else BorderGray,
+                shape = RoundedCornerShape(16.dp)
             )
+            .testTag("verlauf_item_${ep.id}")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Cover Image
+                AsyncImage(
+                    model = item.podcastImageUrl,
+                    contentDescription = item.podcastTitle,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                )
 
-            Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = log.deviceName,
-                        color = if (log.deviceName.contains("Pixel")) CyberGreenGlow else TextWhite,
+                        text = item.podcastTitle,
+                        color = CyberGreen,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Real-time",
+                        text = ep.title,
+                        color = TextWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = ep.publishDate,
                         color = TextGray,
-                        fontSize = 9.sp
+                        fontSize = 11.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = log.action,
-                    color = TextGray,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp
-                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Play / Pause Button
+                IconButton(
+                    onClick = { viewModel.playEpisode(ep) },
+                    modifier = Modifier
+                        .background(if (isCurrentEpPlaying) CyberGreen else ObsidianBlack, CircleShape)
+                        .size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isCurrentEpPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = "Play or Resume",
+                        tint = if (isCurrentEpPlaying) ObsidianBlack else TextWhite,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Duration & Progress Bar & Percentage display
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Schedule,
+                        contentDescription = null,
+                        tint = TextGray,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "$listenedFormatted / $totalDurationFormatted Min",
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = when {
+                        item.isCompleted || item.percentageListened >= 100 -> AdGold.copy(alpha = 0.2f)
+                        else -> CyberGreen.copy(alpha = 0.2f)
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        if (item.isCompleted || item.percentageListened >= 100) AdGold else CyberGreen
+                    )
+                ) {
+                    Text(
+                        text = if (item.isCompleted || item.percentageListened >= 100) "100% Beendet" else "${item.percentageListened}% Gehört",
+                        color = if (item.isCompleted || item.percentageListened >= 100) AdGold else CyberGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Visual Progress Indicator
+            LinearProgressIndicator(
+                progress = { item.percentageListened / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = if (item.isCompleted || item.percentageListened >= 100) AdGold else CyberGreen,
+                trackColor = ObsidianBlack
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Action row: Remove from history / Mark as completed
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = {
+                        viewModel.toggleEpisodeCompleted(ep.id, !item.isCompleted)
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = TextGray)
+                ) {
+                    Text(
+                        text = if (item.isCompleted) "Als unvollständig markieren" else "Als beendet markieren",
+                        fontSize = 11.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                IconButton(
+                    onClick = { viewModel.clearEpisodeHistory(ep.id) },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Entfernen",
+                        tint = TextGray,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
@@ -2888,6 +2874,23 @@ fun FullPlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Prev Chapter Button
+                IconButton(
+                    onClick = { viewModel.skipToPreviousChapter() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(DarkCharcoal, CircleShape)
+                        .border(1.dp, BorderGray, CircleShape)
+                        .testTag("button_prev_chapter")
+                ) {
+                    Icon(
+                        Icons.Default.SkipPrevious,
+                        contentDescription = "Previous Chapter",
+                        tint = TextWhite,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
                 // Skip backward 15s
                 IconButton(
                     onClick = { viewModel.skipBackward() },
@@ -2904,7 +2907,7 @@ fun FullPlayerScreen(
                 IconButton(
                     onClick = { viewModel.togglePlayPause() },
                     modifier = Modifier
-                        .size(76.dp)
+                        .size(72.dp)
                         .background(if (isAdActive) AdGold else CyberGreen, CircleShape)
                         .testTag("player_play_pause")
                 ) {
@@ -2926,6 +2929,23 @@ fun FullPlayerScreen(
                         .testTag("skip_forward")
                 ) {
                     Icon(Icons.Default.Forward10, contentDescription = "Forward 15s", tint = TextWhite)
+                }
+
+                // Next Chapter Button
+                IconButton(
+                    onClick = { viewModel.skipToNextChapter() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(DarkCharcoal, CircleShape)
+                        .border(1.dp, BorderGray, CircleShape)
+                        .testTag("button_next_chapter")
+                ) {
+                    Icon(
+                        Icons.Default.SkipNext,
+                        contentDescription = "Next Chapter",
+                        tint = TextWhite,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
             }
 
@@ -2993,6 +3013,7 @@ fun FullPlayerScreen(
                 transcriptSegments = transcriptSegments,
                 playbackPositionMs = playbackPositionMs,
                 episodeTitle = episode!!.title,
+                viewModel = viewModel,
                 onSegmentSelected = { startMs ->
                     viewModel.seekTo(startMs)
                     showTranscriptSheet = false
@@ -3009,11 +3030,17 @@ fun TranscriptBottomSheet(
     transcriptSegments: List<com.example.data.TranscriptSegment>,
     playbackPositionMs: Long,
     episodeTitle: String,
+    viewModel: PodcastViewModel,
     onSegmentSelected: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterSponsorsOnly by remember { mutableStateOf(false) }
+
+    val isSttScanning by viewModel.isSttScanning.collectAsStateWithLifecycle()
+    val sttLiveText by viewModel.sttLiveText.collectAsStateWithLifecycle()
+    val sttMatchedKeywords by viewModel.sttMatchedKeywords.collectAsStateWithLifecycle()
+    val sttConfidenceScore by viewModel.sttConfidenceScore.collectAsStateWithLifecycle()
 
     val filteredSegments = remember(transcriptSegments, searchQuery, filterSponsorsOnly) {
         transcriptSegments.filter { seg ->
@@ -3100,6 +3127,123 @@ fun TranscriptBottomSheet(
                         contentDescription = "Close",
                         tint = TextGray
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Speech-To-Text (STT) Live Ad Keyword Scanner Console Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        if (sttMatchedKeywords.isNotEmpty()) AdGold else CyberGreen.copy(alpha = 0.4f),
+                        RoundedCornerShape(14.dp)
+                    )
+                    .testTag("stt_ad_scanner_card")
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = if (isSttScanning) CyberGreen else TextGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Speech-To-Text (STT) Ad Keyword Scanner",
+                                color = TextWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Button(
+                            onClick = { viewModel.toggleSttScanner() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSttScanning) CyberGreen else DarkCharcoal,
+                                contentColor = if (isSttScanning) ObsidianBlack else TextWhite
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp).testTag("button_toggle_stt")
+                        ) {
+                            Text(
+                                text = if (isSttScanning) "Scanning ON" else "Start STT",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    if (isSttScanning || sttLiveText.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Live Transcribed Speech:",
+                            color = TextGray,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (sttLiveText.isNotEmpty()) "\"$sttLiveText\"" else "Listening for live audio speech...",
+                            color = TextWhite,
+                            fontSize = 11.sp,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            lineHeight = 14.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Matched ad keywords badges
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Ad Keywords Found:",
+                                color = TextGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            if (sttMatchedKeywords.isEmpty()) {
+                                Text(
+                                    text = "None in current speech window",
+                                    color = CyberGreenGlow,
+                                    fontSize = 10.sp
+                                )
+                            } else {
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    items(sttMatchedKeywords) { kw ->
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = AdGold.copy(alpha = 0.25f),
+                                            border = BorderStroke(1.dp, AdGold)
+                                        ) {
+                                            Text(
+                                                text = "⚠️ $kw",
+                                                color = AdGold,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

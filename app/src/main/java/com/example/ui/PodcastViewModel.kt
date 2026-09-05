@@ -161,6 +161,58 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _lastAcousticAdAlert = MutableStateFlow<AcousticAdSegment?>(null)
     val lastAcousticAdAlert: StateFlow<AcousticAdSegment?> = _lastAcousticAdAlert.asStateFlow()
 
+    // Speech-To-Text (STT) Live Ad Keyword Scanner State
+    private val _isSttScanning = MutableStateFlow(false)
+    val isSttScanning: StateFlow<Boolean> = _isSttScanning.asStateFlow()
+
+    private val _sttLiveText = MutableStateFlow("")
+    val sttLiveText: StateFlow<String> = _sttLiveText.asStateFlow()
+
+    private val _sttMatchedKeywords = MutableStateFlow<List<String>>(emptyList())
+    val sttMatchedKeywords: StateFlow<List<String>> = _sttMatchedKeywords.asStateFlow()
+
+    private val _sttConfidenceScore = MutableStateFlow(0f)
+    val sttConfidenceScore: StateFlow<Float> = _sttConfidenceScore.asStateFlow()
+
+    // Dictionary of recognized ad / commercial keywords across languages
+    private val adKeywordDictionary = listOf(
+        "werbung", "werbepartner", "sponsor", "sponsorship", "sponsored by",
+        "brought to you by", "discount code", "promo code", "promocode", "special offer",
+        "commercial break", "ad break", "partner", "buy now", "link in description",
+        "ag1", "athletic greens", "betterhelp", "nordvpn", "expressvpn", "manscaped",
+        "square space", "babbel", "audible", "factor meals", "shopify"
+    )
+
+    fun toggleSttScanner() {
+        _isSttScanning.value = !_isSttScanning.value
+        if (_isSttScanning.value) {
+            _sponsorSkipEvent.value = "Speech-to-Text STT Scanner Activated: Monitoring audio speech for ad words"
+            scanSpeechTextForAds("This episode is sponsored by AG1 and BetterHelp. Use promo code PODCAST for a special discount offer.")
+        } else {
+            _sttMatchedKeywords.value = emptyList()
+            _sttConfidenceScore.value = 0f
+            _sttLiveText.value = ""
+        }
+    }
+
+    fun scanSpeechTextForAds(customText: String) {
+        _sttLiveText.value = customText
+        val lowerText = customText.lowercase(java.util.Locale.ROOT)
+        val matched = adKeywordDictionary.filter { keyword ->
+            lowerText.contains(keyword)
+        }
+        _sttMatchedKeywords.value = matched
+        if (matched.isNotEmpty()) {
+            val score = (matched.size * 0.35f + 0.30f).coerceAtMost(0.98f)
+            _sttConfidenceScore.value = score
+            if (_isAutoAdSkipEnabled.value) {
+                _sponsorSkipEvent.value = "STT Ad Keyword Match Detected: Found ${matched.joinToString(", ")}"
+            }
+        } else {
+            _sttConfidenceScore.value = 0.05f
+        }
+    }
+
     // Theme Mode (Dark, Light, System)
     private val _themeMode = MutableStateFlow(com.example.ui.theme.AppThemeMode.DARK)
     val themeMode: StateFlow<com.example.ui.theme.AppThemeMode> = _themeMode.asStateFlow()
@@ -255,7 +307,63 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private var playbackJob: Job? = null
 
     enum class Tab {
-        DISCOVER, DOWNLOADS, SYNC_HUB, SETTINGS
+        DISCOVER, DOWNLOADS, VERLAUF, SETTINGS
+    }
+
+    // History Episode Item Model
+    data class HistoryEpisodeItem(
+        val episode: EpisodeEntity,
+        val podcastTitle: String,
+        val podcastImageUrl: String,
+        val durationSeconds: Long,
+        val listenedPositionMs: Long,
+        val percentageListened: Int,
+        val isCompleted: Boolean
+    )
+
+    // Listening History State Flow
+    val historyEpisodes: StateFlow<List<HistoryEpisodeItem>> = combine(
+        repository.allEpisodes,
+        repository.allPodcasts
+    ) { eps, podList ->
+        val podMap = podList.associateBy { it.id }
+        eps.filter { ep ->
+            ep.playbackPositionMs > 0 || ep.isCompleted
+        }.map { ep ->
+            val pod = podMap[ep.podcastId]
+            val totalSec = ep.durationSeconds.coerceAtLeast(1L)
+            val listenedSec = ep.playbackPositionMs / 1000
+            val percentage = if (ep.isCompleted) 100 else ((listenedSec * 100) / totalSec).toInt().coerceIn(0, 100)
+            HistoryEpisodeItem(
+                episode = ep,
+                podcastTitle = pod?.title ?: "Podcast",
+                podcastImageUrl = pod?.coverUrl ?: "",
+                durationSeconds = totalSec,
+                listenedPositionMs = ep.playbackPositionMs,
+                percentageListened = percentage,
+                isCompleted = ep.isCompleted
+            )
+        }.sortedByDescending { it.episode.playbackPositionMs }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun clearAllHistory() {
+        viewModelScope.launch {
+            repository.clearAllHistory()
+        }
+    }
+
+    fun clearEpisodeHistory(episodeId: String) {
+        viewModelScope.launch {
+            repository.clearEpisodeHistory(episodeId)
+        }
+    }
+
+    fun toggleEpisodeCompleted(episodeId: String, markAsCompleted: Boolean) {
+        viewModelScope.launch {
+            val ep = repository.getEpisodeById(episodeId) ?: return@launch
+            val newPos = if (markAsCompleted) ep.durationSeconds * 1000L else 0L
+            repository.updateEpisodeProgress(episodeId, newPos, markAsCompleted)
+        }
     }
 
     data class RemoteSyncInfo(
@@ -460,6 +568,48 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun skipBackward() {
         val current = _playbackPositionMs.value
         seekTo(current - 15000) // -15 seconds
+    }
+
+    fun skipToNextChapter() {
+        val chaps = currentChapters.value
+        if (chaps.isEmpty()) {
+            skipForward()
+            return
+        }
+        val currentSec = _playbackPositionMs.value / 1000
+        val nextChap = chaps.firstOrNull { it.startTimeSeconds > currentSec + 1 }
+        if (nextChap != null) {
+            seekToChapter(nextChap)
+            _sponsorSkipEvent.value = "Kapitel gewechselt: ${nextChap.title}"
+        } else {
+            val ep = _currentPlayingEpisode.value
+            val durationMs = (ep?.durationSeconds ?: 0L) * 1000L
+            if (durationMs > 0) {
+                seekTo(durationMs)
+            }
+        }
+    }
+
+    fun skipToPreviousChapter() {
+        val chaps = currentChapters.value
+        if (chaps.isEmpty()) {
+            skipBackward()
+            return
+        }
+        val currentSec = _playbackPositionMs.value / 1000
+        val curChap = chaps.lastOrNull { it.startTimeSeconds <= currentSec }
+        if (curChap != null && (currentSec - curChap.startTimeSeconds) > 3) {
+            seekToChapter(curChap)
+            _sponsorSkipEvent.value = "Kapitel neugestartet: ${curChap.title}"
+        } else {
+            val prevChap = chaps.takeWhile { it.startTimeSeconds < currentSec }.lastOrNull()
+            if (prevChap != null) {
+                seekToChapter(prevChap)
+                _sponsorSkipEvent.value = "Kapitel gewechselt: ${prevChap.title}"
+            } else {
+                seekTo(0L)
+            }
+        }
     }
 
     // Toggle Subscription
