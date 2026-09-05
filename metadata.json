@@ -1,0 +1,6 @@
+{
+  "name": "DarkCast",
+  "description": "An intuitive, offline-first, dark-themed podcast player featuring local storage, ad-skipping technology, and cloud sync capabilities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

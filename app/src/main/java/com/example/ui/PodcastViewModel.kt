@@ -1,0 +1,438 @@
+package com.example.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.*
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+
+class PodcastViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val database = PodcastDatabase.getDatabase(application)
+    private val repository = PodcastRepository(database.podcastDao())
+
+    // UI state flows
+    val podcasts: StateFlow<List<PodcastEntity>> = repository.allPodcasts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val episodes: StateFlow<List<EpisodeEntity>> = repository.allEpisodes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val downloadedEpisodes: StateFlow<List<EpisodeEntity>> = repository.downloadedEpisodes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val syncLogs: StateFlow<List<SyncLogEntity>> = repository.syncLogs
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Current playing state
+    private val _currentPlayingEpisode = MutableStateFlow<EpisodeEntity?>(null)
+    val currentPlayingEpisode: StateFlow<EpisodeEntity?> = _currentPlayingEpisode.asStateFlow()
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    private val _playbackPositionMs = MutableStateFlow(0L)
+    val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
+
+    // Ad Skipper states
+    private val _isAdActive = MutableStateFlow(false)
+    val isAdActive: StateFlow<Boolean> = _isAdActive.asStateFlow()
+
+    private val _adsBlockedCount = MutableStateFlow(0)
+    val adsBlockedCount: StateFlow<Int> = _adsBlockedCount.asStateFlow()
+
+    private val _savedMinutes = MutableStateFlow(0)
+    val savedMinutes: StateFlow<Int> = _savedMinutes.asStateFlow()
+
+    private val _isAutoAdSkipEnabled = MutableStateFlow(true)
+    val isAutoAdSkipEnabled: StateFlow<Boolean> = _isAutoAdSkipEnabled.asStateFlow()
+
+    // Settings
+    private val _isOfflineModeOnly = MutableStateFlow(false)
+    val isOfflineModeOnly: StateFlow<Boolean> = _isOfflineModeOnly.asStateFlow()
+
+    // Navigation and Detail States
+    private val _activeTab = MutableStateFlow(Tab.DISCOVER)
+    val activeTab: StateFlow<Tab> = _activeTab.asStateFlow()
+
+    private val _selectedPodcast = MutableStateFlow<PodcastEntity?>(null)
+    val selectedPodcast: StateFlow<PodcastEntity?> = _selectedPodcast.asStateFlow()
+
+    // Simulated downloads map: EpisodeId -> Progress (0.0 to 1.0)
+    private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val downloadProgressMap: StateFlow<Map<String, Float>> = _downloadProgressMap.asStateFlow()
+
+    // Cloud Sync simulation states
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _showRemoteSyncPrompt = MutableStateFlow<RemoteSyncInfo?>(null)
+    val showRemoteSyncPrompt: StateFlow<RemoteSyncInfo?> = _showRemoteSyncPrompt.asStateFlow()
+
+    private var playbackJob: Job? = null
+
+    enum class Tab {
+        DISCOVER, DOWNLOADS, SYNC_HUB
+    }
+
+    data class RemoteSyncInfo(
+        val episodeId: String,
+        val episodeTitle: String,
+        val deviceName: String,
+        val remotePositionMs: Long
+    )
+
+    init {
+        viewModelScope.launch {
+            repository.populateInitialDataIfNeeded()
+        }
+    }
+
+    // Tab control
+    fun selectTab(tab: Tab) {
+        _activeTab.value = tab
+        // Close detail view when switching tabs for clean UX
+        if (tab != Tab.DISCOVER) {
+            _selectedPodcast.value = null
+        }
+    }
+
+    // Podcast Detail control
+    fun selectPodcast(podcast: PodcastEntity?) {
+        _selectedPodcast.value = podcast
+    }
+
+    // Media Player control
+    fun playEpisode(episode: EpisodeEntity) {
+        viewModelScope.launch {
+            // Save state of previous playing episode if it exists
+            val prev = _currentPlayingEpisode.value
+            if (prev != null && prev.id != episode.id) {
+                repository.updateEpisodeProgress(prev.id, _playbackPositionMs.value, prev.isCompleted)
+            }
+
+            _currentPlayingEpisode.value = episode
+            _playbackPositionMs.value = episode.playbackPositionMs
+            _isAdActive.value = false
+            _isPlaying.value = true
+            startPlaybackJob()
+
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${episode.title}'")
+        }
+    }
+
+    fun togglePlayPause() {
+        val current = _currentPlayingEpisode.value ?: return
+        if (_isPlaying.value) {
+            _isPlaying.value = false
+            stopPlaybackJob()
+            viewModelScope.launch {
+                repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Paused '${current.title}'")
+            }
+        } else {
+            _isPlaying.value = true
+            startPlaybackJob()
+            viewModelScope.launch {
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Resumed '${current.title}'")
+            }
+        }
+    }
+
+    fun seekTo(positionMs: Long) {
+        val current = _currentPlayingEpisode.value ?: return
+        val durationMs = current.durationSeconds * 1000
+        val target = positionMs.coerceIn(0L, durationMs)
+        _playbackPositionMs.value = target
+
+        // If seeking directly past or before, check ads
+        checkAdDetection(target)
+
+        viewModelScope.launch {
+            repository.updateEpisodeProgress(current.id, target, target >= durationMs)
+        }
+    }
+
+    fun skipForward() {
+        val current = _playbackPositionMs.value
+        seekTo(current + 15000) // +15 seconds
+    }
+
+    fun skipBackward() {
+        val current = _playbackPositionMs.value
+        seekTo(current - 15000) // -15 seconds
+    }
+
+    // Toggle Subscription
+    fun toggleSubscribe(podcast: PodcastEntity) {
+        viewModelScope.launch {
+            val updated = podcast.copy(isSubscribed = !podcast.isSubscribed)
+            repository.updatePodcast(updated)
+            if (_selectedPodcast.value?.id == podcast.id) {
+                _selectedPodcast.value = updated
+            }
+            val status = if (updated.isSubscribed) "Subscribed to" else "Unsubscribed from"
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "$status '${podcast.title}'")
+        }
+    }
+
+    // Toggle Favorite Episode
+    fun toggleFavorite(episode: EpisodeEntity) {
+        viewModelScope.launch {
+            val updated = episode.copy(isFavorite = !episode.isFavorite)
+            repository.updateEpisode(updated)
+            // Sync with currently playing if it matches
+            if (_currentPlayingEpisode.value?.id == episode.id) {
+                _currentPlayingEpisode.value = updated
+            }
+        }
+    }
+
+    // Toggle Offline Mode Setting
+    fun setOfflineMode(enabled: Boolean) {
+        _isOfflineModeOnly.value = enabled
+        viewModelScope.launch {
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Toggled Offline-Mode ${if (enabled) "ON" else "OFF"}")
+        }
+    }
+
+    // Toggle Auto Ad-Skip Setting
+    fun setAutoAdSkip(enabled: Boolean) {
+        _isAutoAdSkipEnabled.value = enabled
+        viewModelScope.launch {
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Toggled Auto Ad-Skipper ${if (enabled) "ON" else "OFF"}")
+        }
+    }
+
+    // Trigger Ad Skip Manually
+    fun skipAdManually() {
+        if (!_isAdActive.value) return
+        performAdSkip()
+    }
+
+    // Download Simulation
+    fun downloadEpisode(episode: EpisodeEntity) {
+        if (episode.isDownloaded) return
+        viewModelScope.launch {
+            // Check if downloading already in progress
+            if (_downloadProgressMap.value.containsKey(episode.id)) return@launch
+
+            // Simulate download progress in increments
+            for (progress in 1..10) {
+                val fraction = progress / 10.0f
+                _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to fraction)
+                delay(200) // short latency for download effect
+            }
+
+            // Mark as downloaded in DB
+            val updated = episode.copy(
+                isDownloaded = true,
+                downloadLocalPath = "/local/podcasts/${episode.id}.mp3"
+            )
+            repository.updateEpisode(updated)
+
+            // Remove from progress tracker
+            _downloadProgressMap.value = _downloadProgressMap.value - episode.id
+
+            // Update local state if active
+            if (_currentPlayingEpisode.value?.id == episode.id) {
+                _currentPlayingEpisode.value = updated
+            }
+
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Downloaded '${episode.title}' for offline playback")
+        }
+    }
+
+    fun deleteDownload(episode: EpisodeEntity) {
+        viewModelScope.launch {
+            val updated = episode.copy(isDownloaded = false, downloadLocalPath = null)
+            repository.updateEpisode(updated)
+            if (_currentPlayingEpisode.value?.id == episode.id) {
+                _currentPlayingEpisode.value = updated
+            }
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Deleted offline copy of '${episode.title}'")
+        }
+    }
+
+    // Cloud Sync Simulator Actions
+    fun triggerCloudSyncNow() {
+        viewModelScope.launch {
+            if (_isSyncing.value) return@launch
+            _isSyncing.value = true
+
+            repository.addSyncLog("Cloud Services", "Establishing secure handshake for Pixel 9 Pro...")
+            delay(800)
+            repository.addSyncLog("Cloud Services", "Uploading latest listening positions to multi-device pool...")
+            delay(1000)
+
+            // Sync currently playing progress
+            val current = _currentPlayingEpisode.value
+            if (current != null) {
+                repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
+            }
+
+            _isSyncing.value = false
+            repository.addSyncLog("Cloud Services", "Sync completed successfully. 3 companion devices (iPad, Chrome, iPhone) updated.")
+        }
+    }
+
+    // Simulate other devices sending progress updates to trigger a real sync action
+    fun simulateRemoteDeviceUpdate() {
+        viewModelScope.launch {
+            val deviceList = listOf("iPhone 15 Pro", "iPad Air", "MacBook Chrome")
+            val selectedDevice = deviceList.random()
+
+            // Find an episode to sync progress for
+            val allEps = episodes.value
+            if (allEps.isEmpty()) return@launch
+
+            val chosenEpisode = allEps.random()
+            // Propose a random playback position (e.g., between 15% and 80% through)
+            val percentage = (15..80).random() / 100f
+            val targetPositionMs = (chosenEpisode.durationSeconds * 1000 * percentage).toLong()
+
+            _showRemoteSyncPrompt.value = RemoteSyncInfo(
+                episodeId = chosenEpisode.id,
+                episodeTitle = chosenEpisode.title,
+                deviceName = selectedDevice,
+                remotePositionMs = targetPositionMs
+            )
+        }
+    }
+
+    fun acceptRemoteSync() {
+        val syncInfo = _showRemoteSyncPrompt.value ?: return
+        viewModelScope.launch {
+            _showRemoteSyncPrompt.value = null
+            // Load or update episode progress in DB
+            repository.updateEpisodeProgress(syncInfo.episodeId, syncInfo.remotePositionMs, false)
+
+            // If we are playing this episode, adjust playback position immediately
+            if (_currentPlayingEpisode.value?.id == syncInfo.episodeId) {
+                _playbackPositionMs.value = syncInfo.remotePositionMs
+                _isAdActive.value = false
+            }
+
+            repository.addSyncLog(
+                syncInfo.deviceName,
+                "Applied progress of ${formatDuration(syncInfo.remotePositionMs / 1000)} for '${syncInfo.episodeTitle}'"
+            )
+        }
+    }
+
+    fun rejectRemoteSync() {
+        val syncInfo = _showRemoteSyncPrompt.value ?: return
+        _showRemoteSyncPrompt.value = null
+        viewModelScope.launch {
+            repository.addSyncLog("Pixel 9 Pro", "Ignored sync notification from ${syncInfo.deviceName}")
+        }
+    }
+
+    fun clearHistory() {
+        viewModelScope.launch {
+            repository.clearSyncLogs()
+            repository.addSyncLog("System", "Sync logs cleared.")
+        }
+    }
+
+    // Internal simulation loop
+    private fun startPlaybackJob() {
+        playbackJob?.cancel()
+        playbackJob = viewModelScope.launch {
+            while (_isPlaying.value) {
+                delay(250) // Update position every 250ms for smooth UI progress
+                val current = _currentPlayingEpisode.value ?: break
+                val newPosition = _playbackPositionMs.value + 250
+                val durationMs = current.durationSeconds * 1000
+
+                if (newPosition >= durationMs) {
+                    // Episode completed
+                    _playbackPositionMs.value = durationMs
+                    _isPlaying.value = false
+                    repository.updateEpisodeProgress(current.id, durationMs, true)
+                    repository.addSyncLog("Pixel 9 Pro (This Device)", "Completed listening to '${current.title}'")
+                    break
+                } else {
+                    _playbackPositionMs.value = newPosition
+                    checkAdDetection(newPosition)
+                }
+            }
+        }
+    }
+
+    private fun stopPlaybackJob() {
+        playbackJob?.cancel()
+        playbackJob = null
+    }
+
+    private fun checkAdDetection(positionMs: Long) {
+        val current = _currentPlayingEpisode.value ?: return
+        val currentSeconds = positionMs / 1000
+
+        // Parse ad timestamps
+        if (current.adTimestampsSeconds.isNotEmpty()) {
+            val adSeconds = current.adTimestampsSeconds.split(",")
+                .mapNotNull { it.trim().toLongOrNull() }
+
+            // Check if we just hit an ad boundary (current window is 3 seconds)
+            val adHit = adSeconds.firstOrNull { adSec ->
+                currentSeconds >= adSec && currentSeconds < adSec + 3
+            }
+
+            if (adHit != null) {
+                if (!_isAdActive.value) {
+                    if (_isAutoAdSkipEnabled.value) {
+                        performAdSkip()
+                    } else {
+                        _isAdActive.value = true
+                    }
+                }
+            } else {
+                _isAdActive.value = false
+            }
+        }
+    }
+
+    private fun performAdSkip() {
+        _isAdActive.value = false
+        _adsBlockedCount.value += 1
+        _savedMinutes.value += 2 // Assume an ad is 2 minutes long on average
+
+        // Jump current position forward by 15 seconds to skip the ad segment and add nice logging
+        val skipAmountMs = 15000L
+        val current = _playbackPositionMs.value
+        val nextPosition = current + skipAmountMs
+        _playbackPositionMs.value = nextPosition
+
+        val episode = _currentPlayingEpisode.value
+        if (episode != null) {
+            viewModelScope.launch {
+                repository.addSyncLog(
+                    "Ad-Skipper Engine",
+                    "Intercepted and skipped sponsor segment in '${episode.title}'. Saved 120s of playtime."
+                )
+                repository.updateEpisodeProgress(episode.id, nextPosition, false)
+            }
+        }
+    }
+
+    // Helper to format duration in MM:SS or HH:MM:SS
+    fun formatDuration(seconds: Long): String {
+        val hrs = seconds / 3600
+        val mins = (seconds % 3600) / 60
+        val secs = seconds % 60
+        return if (hrs > 0) {
+            String.format("%02d:%02d:%02d", hrs, mins, secs)
+        } else {
+            String.format("%02d:%02d", mins, secs)
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopPlaybackJob()
+    }
+}
