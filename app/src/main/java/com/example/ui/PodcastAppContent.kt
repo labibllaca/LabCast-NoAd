@@ -54,6 +54,8 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     var isPlayerExpanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    val colors = LocalCustomColors.current
+
     Scaffold(
         bottomBar = {
             Column {
@@ -74,9 +76,9 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
 
                 // Main Navigation Tabs
                 NavigationBar(
-                    containerColor = DarkCharcoal,
+                    containerColor = colors.cardBackground,
                     tonalElevation = 8.dp,
-                    modifier = Modifier.border(1.dp, BorderGray, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+                    modifier = Modifier.border(1.dp, colors.itemBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 ) {
                     NavigationBarItem(
                         selected = activeTab == PodcastViewModel.Tab.DISCOVER,
@@ -84,11 +86,11 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         icon = { Icon(Icons.Default.Explore, contentDescription = "Discover") },
                         label = { Text("Discover") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ObsidianBlack,
+                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
                             selectedTextColor = CyberGreen,
                             indicatorColor = CyberGreen,
-                            unselectedIconColor = TextGray,
-                            unselectedTextColor = TextGray
+                            unselectedIconColor = colors.textMuted,
+                            unselectedTextColor = colors.textMuted
                         ),
                         modifier = Modifier.testTag("nav_tab_discover")
                     )
@@ -98,11 +100,11 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         icon = { Icon(Icons.Default.OfflinePin, contentDescription = "Offline") },
                         label = { Text("Offline") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ObsidianBlack,
+                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
                             selectedTextColor = CyberGreen,
                             indicatorColor = CyberGreen,
-                            unselectedIconColor = TextGray,
-                            unselectedTextColor = TextGray
+                            unselectedIconColor = colors.textMuted,
+                            unselectedTextColor = colors.textMuted
                         ),
                         modifier = Modifier.testTag("nav_tab_offline")
                     )
@@ -112,18 +114,32 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         icon = { Icon(Icons.Default.Sync, contentDescription = "Sync Hub") },
                         label = { Text("Sync Hub") },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = ObsidianBlack,
+                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
                             selectedTextColor = CyberGreen,
                             indicatorColor = CyberGreen,
-                            unselectedIconColor = TextGray,
-                            unselectedTextColor = TextGray
+                            unselectedIconColor = colors.textMuted,
+                            unselectedTextColor = colors.textMuted
                         ),
                         modifier = Modifier.testTag("nav_tab_sync")
+                    )
+                    NavigationBarItem(
+                        selected = activeTab == PodcastViewModel.Tab.SETTINGS,
+                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.SETTINGS) },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                        label = { Text("Settings") },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
+                            selectedTextColor = CyberGreen,
+                            indicatorColor = CyberGreen,
+                            unselectedIconColor = colors.textMuted,
+                            unselectedTextColor = colors.textMuted
+                        ),
+                        modifier = Modifier.testTag("nav_tab_settings")
                     )
                 }
             }
         },
-        containerColor = ObsidianBlack
+        containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -168,6 +184,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                     PodcastViewModel.Tab.DISCOVER -> DiscoverScreen(viewModel)
                     PodcastViewModel.Tab.DOWNLOADS -> DownloadsScreen(viewModel)
                     PodcastViewModel.Tab.SYNC_HUB -> SyncHubScreen(viewModel)
+                    PodcastViewModel.Tab.SETTINGS -> SettingsScreen(viewModel)
                 }
             }
 
@@ -284,6 +301,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
 // ==========================================
 @Composable
 fun DiscoverScreen(viewModel: PodcastViewModel) {
+    val colors = LocalCustomColors.current
     val podcasts by viewModel.podcasts.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val selectedPodcast by viewModel.selectedPodcast.collectAsStateWithLifecycle()
@@ -326,33 +344,56 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                         )
                         Text(
                             text = "Audio Sanctuary • Ad-Skipper Active",
-                            color = TextGray,
+                            color = colors.textMuted,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    // Network status indicator
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                if (isOfflineModeOnly) ErrorRed.copy(alpha = 0.2f) else CyberGreen.copy(alpha = 0.2f),
-                                CircleShape
-                            )
-                            .border(
-                                1.dp,
-                                if (isOfflineModeOnly) ErrorRed else CyberGreen,
-                                CircleShape
-                            )
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = if (isOfflineModeOnly) "OFFLINE" else "ONLINE",
-                            color = if (isOfflineModeOnly) ErrorRed else CyberGreen,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        )
+                        // Network status indicator
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    if (isOfflineModeOnly) ErrorRed.copy(alpha = 0.2f) else CyberGreen.copy(alpha = 0.2f),
+                                    CircleShape
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isOfflineModeOnly) ErrorRed else CyberGreen,
+                                    CircleShape
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (isOfflineModeOnly) "OFFLINE" else "ONLINE",
+                                color = if (isOfflineModeOnly) ErrorRed else CyberGreen,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        // Quick Settings Button
+                        IconButton(
+                            onClick = { viewModel.selectTab(PodcastViewModel.Tab.SETTINGS) },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(colors.cardBackground)
+                                .border(1.dp, colors.itemBorder, CircleShape)
+                                .testTag("btn_quick_settings_discover")
+                        ) {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = colors.textPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
