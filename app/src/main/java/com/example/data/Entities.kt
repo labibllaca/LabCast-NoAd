@@ -11,7 +11,8 @@ data class PodcastEntity(
     val description: String,
     val coverUrl: String,
     val category: String,
-    val isSubscribed: Boolean = false
+    val isSubscribed: Boolean = false,
+    val feedUrl: String = ""
 )
 
 @Entity(tableName = "episodes")

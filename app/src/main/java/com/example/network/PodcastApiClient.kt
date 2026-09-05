@@ -162,15 +162,16 @@ object PodcastApiClient {
     private fun parseRssFeed(xml: String): List<FeedEpisode> {
         val list = mutableListOf<FeedEpisode>()
         try {
-            // Lightweight regex extraction of <item> blocks to avoid heavy XML pull parsers
+            // Extraction of <item> blocks from RSS XML
             val itemRegex = Regex("<item>(.*?)</item>", RegexOption.DOT_MATCHES_ALL)
             val titleRegex = Regex("<title><!\\[CDATA\\[(.*?)\\]\\]></title>|<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
             val descRegex = Regex("<description><!\\[CDATA\\[(.*?)\\]\\]></description>|<description>(.*?)</description>", RegexOption.DOT_MATCHES_ALL)
+            val contentEncodedRegex = Regex("<content:encoded><!\\[CDATA\\[(.*?)\\]\\]></content:encoded>|<content:encoded>(.*?)</content:encoded>", RegexOption.DOT_MATCHES_ALL)
             val enclosureRegex = Regex("<enclosure[^>]*url=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
             val pubDateRegex = Regex("<pubDate>(.*?)</pubDate>", RegexOption.IGNORE_CASE)
             val durationRegex = Regex("<itunes:duration>(.*?)</itunes:duration>", RegexOption.IGNORE_CASE)
 
-            val matches = itemRegex.findAll(xml).take(15)
+            val matches = itemRegex.findAll(xml).take(20)
             var index = 1
             for (match in matches) {
                 val itemBlock = match.groupValues[1]
@@ -179,15 +180,30 @@ object PodcastApiClient {
                 val rawTitle = titleMatch?.groups?.get(1)?.value ?: titleMatch?.groups?.get(2)?.value ?: "Episode $index"
                 val cleanTitle = cleanHtml(rawTitle)
 
-                val descMatch = descRegex.find(itemBlock)
-                val rawDesc = descMatch?.groups?.get(1)?.value ?: descMatch?.groups?.get(2)?.value ?: "Full episode details and commentary."
-                val cleanDesc = cleanHtml(rawDesc).take(280)
+                // Get best description from content:encoded or description
+                val contentEncoded = contentEncodedRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
+                val descMatch = descRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
+                val rawDesc = contentEncoded ?: descMatch ?: "Full episode details and commentary."
+                val cleanDesc = cleanHtml(rawDesc).take(4000)
 
                 val audioUrl = enclosureRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
                 val pubDate = pubDateRegex.find(itemBlock)?.groups?.get(1)?.value?.take(16) ?: "Recent"
 
                 val durationStr = durationRegex.find(itemBlock)?.groups?.get(1)?.value ?: "1800"
                 val durationSec = parseDurationToSeconds(durationStr)
+
+                // Extract all structured chapters (Podlove XML, Podcasting 2.0 namespace, Show notes timestamps)
+                val parsedChapters = com.example.data.ChapterParser.parseFromFeedItem(itemBlock, durationSec)
+                val chaptersPipeString = if (parsedChapters.isNotEmpty()) {
+                    com.example.data.ChapterParser.toPipeString(parsedChapters)
+                } else {
+                    // Intelligent fallback chapter structure if show notes had no timestamps
+                    val sponsorTime = (durationSec * 0.15).toLong().coerceAtLeast(60L)
+                    val mainTime = (durationSec * 0.25).toLong().coerceAtLeast(180L)
+                    val deepTime = (durationSec * 0.65).toLong().coerceAtLeast(360L)
+                    val wrapTime = (durationSec * 0.90).toLong().coerceAtLeast(480L)
+                    "0:Introduction & Overview|$sponsorTime:Sponsor: Featured Partner|$mainTime:Discussion & Main Topic|$deepTime:In-Depth Analysis & Commentary|$wrapTime:Wrap-up & Key Points"
+                }
 
                 val epId = "rss_${cleanTitle.hashCode().toString().replace("-", "x")}_$index"
 
@@ -199,7 +215,8 @@ object PodcastApiClient {
                         durationSeconds = durationSec,
                         publishDate = pubDate,
                         audioUrl = audioUrl.ifEmpty { "https://example.com/audio/stream_$index.mp3" },
-                        adTimestampsSeconds = "45,${durationSec / 2}"
+                        adTimestampsSeconds = "45,${durationSec / 2}",
+                        chapters = chaptersPipeString
                     )
                 )
                 index++
@@ -249,11 +266,71 @@ object CuratedPodcastCatalog {
             title = "Huberman Lab",
             author = "Scicomm Media / Dr. Andrew Huberman",
             description = "Neuroscience, human performance, science-based tools for everyday life, deep sleep optimization, and neuroplasticity.",
-            coverUrl = "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=400&auto=format&fit=crop&q=60",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
             category = "Health & Fitness",
             feedUrl = "https://feeds.megaphone.fm/hubermanlab",
-            source = PodcastSource.SPOTIFY_OPEN,
+            source = PodcastSource.ITUNES,
             trackCount = 210,
+            releaseDate = "2026-09-04"
+        ),
+        SearchResultPodcast(
+            id = "curated_shqip",
+            title = "Shqip Story Podcast",
+            author = "Hasbije B.",
+            description = "Një hapësirë ku dëgjohen historitë, përvojat dhe narrativat autentike shqiptare.",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/ed/d8/7b/edd87b4a-243e-c2b8-c8d7-78a991ab8f13/mza_14377614502294035074.jpg/600x600bb.jpg",
+            category = "True Crime",
+            feedUrl = "https://anchor.fm/s/28d45cb0/podcast/rss",
+            source = PodcastSource.SPOTIFY_OPEN,
+            trackCount = 68,
+            releaseDate = "2026-08-30"
+        ),
+        SearchResultPodcast(
+            id = "curated_harbinger",
+            title = "The Jordan Harbinger Show",
+            author = "Jordan Harbinger",
+            description = "In-depth conversations with top performers deconstructing strategies, deception detection, and psychological wisdom.",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/ce/57/a9/ce57a912-523d-5e81-f461-c71591eb2b4b/mza_855972047978822038.jpeg/600x600bb.jpg",
+            category = "Education",
+            feedUrl = "https://rss.introcast.io:443/1344999619/www.podcastone.com/podcast?categoryID2=1237",
+            source = PodcastSource.ITUNES,
+            trackCount = 950,
+            releaseDate = "2026-09-03"
+        ),
+        SearchResultPodcast(
+            id = "curated_aom",
+            title = "The Art of Manliness",
+            author = "Brett McKay",
+            description = "Philosophy, history, physical fitness, literature, and practical insights to help you live a flourishing life.",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/ec/db/72/ecdb72bd-11e5-5c9b-87a6-a8f157b214db/mza_11005987414919781126.jpeg/600x600bb.jpg",
+            category = "Philosophy",
+            feedUrl = "https://rss.art19.com/the-art-of-manliness",
+            source = PodcastSource.PODCAST_INDEX,
+            trackCount = 820,
+            releaseDate = "2026-09-01"
+        ),
+        SearchResultPodcast(
+            id = "curated_peterson",
+            title = "The Jordan B. Peterson Podcast",
+            author = "Dr. Jordan B. Peterson",
+            description = "Lectures, interviews, and deep philosophical discussions exploring psychology, culture, and meaning.",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/58/16/42/581642ef-7f31-d538-7c69-0a42ec25c604/mza_5721699391369703653.jpeg/600x600bb.jpg",
+            category = "Education",
+            feedUrl = "https://feeds.megaphone.fm/BVDWV6444647327",
+            source = PodcastSource.ITUNES,
+            trackCount = 420,
+            releaseDate = "2026-08-31"
+        ),
+        SearchResultPodcast(
+            id = "curated_batman",
+            title = "DC High Volume: Batman",
+            author = "DC | Realm",
+            description = "An immersive, cinematic audio experience following Batman as he faces dark conspiracies across Gotham City.",
+            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/17/2c/78/172c787f-79ce-80e7-cec2-2f08d6f1cbb1/mza_17006185782027313788.jpeg/600x600bb.jpg",
+            category = "Fiction",
+            feedUrl = "https://feeds.megaphone.fm/SBP4487706450",
+            source = PodcastSource.SPOTIFY_OPEN,
+            trackCount = 24,
             releaseDate = "2026-09-04"
         ),
         SearchResultPodcast(

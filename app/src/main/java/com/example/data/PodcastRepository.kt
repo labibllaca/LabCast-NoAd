@@ -57,140 +57,181 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
     // Population of Initial Rich Data
     suspend fun populateInitialDataIfNeeded() {
         val currentPodcasts = allPodcasts.first()
-        if (currentPodcasts.isNotEmpty()) return
+        if (currentPodcasts.any { it.id == "pod_huberman_1545953110" }) return
 
-        val samplePodcasts = listOf(
+        val defaultPodcasts = listOf(
             PodcastEntity(
-                id = "pod_1",
-                title = "Code Horizon",
-                author = "DevX Network",
-                description = "Exploring the absolute frontiers of AI, compiler tech, and human-computer symbiosis. Your weekly deep dive into how lines of code shape tomorrow's reality.",
-                coverUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                category = "Technology"
+                id = "pod_huberman_1545953110",
+                title = "Huberman Lab",
+                author = "Scicomm Media / Dr. Andrew Huberman",
+                description = "The Huberman Lab podcast discusses neuroscience and science-based tools, including how our brain and its connections with the organs of our body control our perceptions, our behaviors, and our health.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                category = "Health & Fitness",
+                isSubscribed = true,
+                feedUrl = "https://feeds.megaphone.fm/hubermanlab"
             ),
             PodcastEntity(
-                id = "pod_2",
-                title = "Deep Orbit",
-                author = "Nebula Labs",
-                description = "Embark on an audio journey through astrophysics, deep space exploration, and quantum mysteries. Exploring the cosmos from the comfort of your dark room.",
-                coverUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                category = "Science"
+                id = "pod_shqip_1521438307",
+                title = "Shqip Story Podcast",
+                author = "Hasbije B.",
+                description = "Një hapësirë ku dëgjohen historitë, përvojat dhe narrativat autentike shqiptare. Histori jetësore, investigative dhe kulturore.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/ed/d8/7b/edd87b4a-243e-c2b8-c8d7-78a991ab8f13/mza_14377614502294035074.jpg/600x600bb.jpg",
+                category = "True Crime",
+                isSubscribed = true,
+                feedUrl = "https://anchor.fm/s/28d45cb0/podcast/rss"
             ),
             PodcastEntity(
-                id = "pod_3",
-                title = "The Daily Rest",
-                author = "Dr. Evelyn Reed",
-                description = "Practical meditation, digital detox guides, and neuropsychology insights to quiet your mind. Find calm in a hyper-connected, high-frequency digital landscape.",
-                coverUrl = "https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                category = "Wellness"
+                id = "pod_harbinger_1344999619",
+                title = "The Jordan Harbinger Show",
+                author = "Jordan Harbinger",
+                description = "In-depth conversations with the world's top performers, legendary thinkers, and fascinating minds, deconstructing their strategies and practical wisdom.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/ce/57/a9/ce57a912-523d-5e81-f461-c71591eb2b4b/mza_855972047978822038.jpeg/600x600bb.jpg",
+                category = "Education",
+                isSubscribed = true,
+                feedUrl = "https://rss.introcast.io:443/1344999619/www.podcastone.com/podcast?categoryID2=1237"
             ),
             PodcastEntity(
-                id = "pod_4",
-                title = "Shadow Files",
-                author = "Marcus Kane",
-                description = "Unsolved cryptology cases, cyber espionage chronicles, and historical mysteries. Step inside the shadows where files remain permanently classified.",
-                coverUrl = "https://images.unsplash.com/photo-1509248961158-e54f6934749c?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                category = "Mystery"
+                id = "pod_aom_332516054",
+                title = "The Art of Manliness",
+                author = "Brett McKay",
+                description = "Insights on philosophy, history, fitness, literature, psychology, and personal growth to help you live a flourishing and capable life.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/ec/db/72/ecdb72bd-11e5-5c9b-87a6-a8f157b214db/mza_11005987414919781126.jpeg/600x600bb.jpg",
+                category = "Philosophy",
+                isSubscribed = true,
+                feedUrl = "https://rss.art19.com/the-art-of-manliness"
+            ),
+            PodcastEntity(
+                id = "pod_peterson_1184022695",
+                title = "The Jordan B. Peterson Podcast",
+                author = "Dr. Jordan B. Peterson",
+                description = "Lectures, interviews, and deep philosophical discussions exploring psychology, culture, meaning, theology, and the human condition.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/58/16/42/581642ef-7f31-d538-7c69-0a42ec25c604/mza_5721699391369703653.jpeg/600x600bb.jpg",
+                category = "Education",
+                isSubscribed = true,
+                feedUrl = "https://feeds.megaphone.fm/BVDWV6444647327"
+            ),
+            PodcastEntity(
+                id = "pod_batman_1802737962",
+                title = "DC High Volume: Batman",
+                author = "DC | Realm",
+                description = "An immersive, cinematic audio experience following Batman as he faces dark conspiracies, psychological battles, and Gotham's greatest rogues.",
+                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/17/2c/78/172c787f-79ce-80e7-cec2-2f08d6f1cbb1/mza_17006185782027313788.jpeg/600x600bb.jpg",
+                category = "Fiction",
+                isSubscribed = true,
+                feedUrl = "https://feeds.megaphone.fm/SBP4487706450"
             )
         )
 
-        val sampleEpisodes = listOf(
+        val defaultEpisodes = listOf(
             EpisodeEntity(
-                id = "ep_1_1",
-                podcastId = "pod_1",
-                podcastTitle = "Code Horizon",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "The Rise of Agentic AI Assistants",
-                description = "In this episode, we dissect how autonomous coding agents are transitioning from autocomplete tools to system-level developers. We explore their inner cognitive architecture and what this means for the software engineering discipline.",
-                durationSeconds = 1200, // 20 minutes
-                publishDate = "2026-09-01",
+                id = "ep_huberman_1",
+                podcastId = "pod_huberman_1545953110",
+                podcastTitle = "Huberman Lab",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                title = "Essentials: Use Sleep to Enhance Learning, Memory & Emotional State | Dr. Gina Poe",
+                description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.",
+                durationSeconds = 2040, // 34 minutes
+                publishDate = "2026-09-03",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "45,360,780", // Ads at 45s, 6 min, 13 min
-                chapters = "0:Opening & Introduction|120:Autonomous vs Reactive Systems|420:Cognitive Architecture & Tool Calling|840:The Future of Software Engineers|1100:Wrap-up & Key Takeaways"
+                adTimestampsSeconds = "407,1196,1718",
+                chapters = "0:Dr. Gina Poe Introduction|19:Sleep States & Perfect Night's Sleep|143:Early Sleep & Memory Processing|274:Growth Hormone & Consistent Bedtime|407:Sponsor: LMNT|500:Alcohol & Negative Sleep Effects|558:Middle Sleep States & Creativity|632:Waking During Night & Hydration|699:REM, Deep Sleep & Sleepwalking|841:Morning Grogginess & Trackers|953:Brain Waste Clearance & Glial Flow|1196:Sponsor: Eight Sleep|1274:Locus Coeruleus & Calm Bedtime Routine|1516:Sleep Spindles & Learning|1718:Sponsor: AG1|1796:Trauma Recovery & REM Sleep|2009:Acknowledgements & Disclaimers"
             ),
             EpisodeEntity(
-                id = "ep_1_2",
-                podcastId = "pod_1",
-                podcastTitle = "Code Horizon",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "Can Machines Truly Create?",
-                description = "A philosophical debate on whether large neural networks can possess genuine artistic intuition, or if they are simply executing high-dimensional pattern matching on human intellectual property.",
-                durationSeconds = 900, // 15 minutes
-                publishDate = "2026-08-25",
+                id = "ep_huberman_2",
+                podcastId = "pod_huberman_1545953110",
+                podcastTitle = "Huberman Lab",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                title = "Master Your Dopamine & Drive for Focus, Motivation & Performance",
+                description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.",
+                durationSeconds = 2400, // 40 mins
+                publishDate = "2026-08-27",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
                 isDownloaded = false,
-                downloadLocalPath = null,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "120,540",
-                chapters = "0:Introduction & The Turing Test|180:Generative Models & Latent Space|480:Human Intuition vs Statistical Synthesis|720:The Copyright Frontier|840:Closing Thoughts"
+                adTimestampsSeconds = "180,960",
+                chapters = "0:Dopamine Dynamics Overview|180:Sponsor: Athletic Greens|270:The Dopamine Baseline & Peaks|540:Effort and the Reward Circuit|960:Sponsor: InsideTracker|1050:Cold Exposure & Neurotransmitter Release|1500:Intermittent Reward Schedules|2100:Actionable Protocols & Summary"
             ),
             EpisodeEntity(
-                id = "ep_2_1",
-                podcastId = "pod_2",
-                podcastTitle = "Deep Orbit",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "Voyage to Europa: Hunting for Subsurface Life",
-                description = "NASA's upcoming clipper missions are designed to scan Jupiter's moon Europa. Join us as we speak with lead astrobiologists about the chemistry of subsurface oceans and what thermal vents might be hiding.",
+                id = "ep_shqip_1",
+                podcastId = "pod_shqip_1521438307",
+                podcastTitle = "Shqip Story Podcast",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts115/v4/ed/d8/7b/edd87b4a-243e-c2b8-c8d7-78a991ab8f13/mza_14377614502294035074.jpg/600x600bb.jpg",
+                title = "Misteret e Pazgjidhura dhe Rrëfimet e Ndaluara",
+                description = "Një hetim i thellë mbi ngjarje të pazakonta dhe histori të padëgjuara më parë. Rrëfime autentike nga dëshmitarë të kohës.",
                 durationSeconds = 1800, // 30 mins
-                publishDate = "2026-09-03",
+                publishDate = "2026-08-30",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "30,900",
-                chapters = "0:Mission Launch & Overview|240:Subsurface Ice Thickness|600:Hydrothermal Vents & Astrobiology|1200:Radiation Hazards at Jupiter|1650:Summary & Timeline"
+                adTimestampsSeconds = "120,600",
+                chapters = "0:Hyrje dhe Ngjarja Kryesore|120:Sponsor: Njoftime & Partnerë|210:Dëshmitë e Para|600:Reklamë / Sponsor|690:Zhvillimet e Hetimit|1200:Konkluzionet dhe Mesazhi Përfundimtar"
             ),
             EpisodeEntity(
-                id = "ep_2_2",
-                podcastId = "pod_2",
-                podcastTitle = "Deep Orbit",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "The Dark Matter Riddle",
-                description = "We can't see it, touch it, or directly detect it, yet it makes up over 80% of all matter in the universe. We review the latest subterranean particle detector experiments hoping to catch a stray WIMP.",
-                durationSeconds = 1500, // 25 mins
-                publishDate = "2026-08-20",
+                id = "ep_harbinger_1",
+                podcastId = "pod_harbinger_1344999619",
+                podcastTitle = "The Jordan Harbinger Show",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/ce/57/a9/ce57a912-523d-5e81-f461-c71591eb2b4b/mza_855972047978822038.jpeg/600x600bb.jpg",
+                title = "Deconstructing Manipulation Tactics & Psychological Influence",
+                description = "Jordan sits down with former behavioral analysts to dissect deception detection, social engineering techniques, and how to safeguard your personal boundaries in high-stakes environments.",
+                durationSeconds = 2100, // 35 mins
+                publishDate = "2026-09-02",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "15,600",
-                chapters = "0:The Missing Mass Problem|180:WIMPs & Axions Explained|600:Gran Sasso Deep Underground Lab|1100:Alternative Theories: MOND|1380:Final Conclusions"
+                adTimestampsSeconds = "180,840,1500",
+                chapters = "0:Welcome & Guest Intro|180:Sponsor: BetterHelp|270:Micro-Expressions and Verbal Cues|540:The Anatomy of Social Engineering|840:Sponsor: Shopify|930:Emotional Anchoring Techniques|1500:Sponsor: SimpliSafe|1590:Building Psychological Resilience|1950:Jordan's Final Thoughts"
             ),
             EpisodeEntity(
-                id = "ep_3_1",
-                podcastId = "pod_3",
-                podcastTitle = "The Daily Rest",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "Breathing in the Dark: A Guided Slumber Routine",
-                description = "Settle down with this 10-minute slow-frequency breathing exercise. Specifically tailored to quiet anxiety, lower blood pressure, and ease transition into restorative deep sleep.",
-                durationSeconds = 600, // 10 mins
-                publishDate = "2026-09-04",
+                id = "ep_aom_1",
+                podcastId = "pod_aom_332516054",
+                podcastTitle = "The Art of Manliness",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/ec/db/72/ecdb72bd-11e5-5c9b-87a6-a8f157b214db/mza_11005987414919781126.jpeg/600x600bb.jpg",
+                title = "The Philosophy of Stoic Resilience in the Modern World",
+                description = "Brett McKay explores how Seneca, Epictetus, and Marcus Aurelius approached adversity, mental fortitude, and disciplined living amidst unpredictable times.",
+                durationSeconds = 1920, // 32 mins
+                publishDate = "2026-09-01",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3",
                 isDownloaded = false,
-                downloadLocalPath = null,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "15", // Quick ad near the start to demonstrate Skipper
-                chapters = "0:Introduction & Breath Pacing|90:Box Breathing (4-4-4-4)|240:Progressive Muscle Relaxation|450:Deep Sleep Drift"
+                adTimestampsSeconds = "240,900",
+                chapters = "0:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up"
             ),
             EpisodeEntity(
-                id = "ep_4_1",
-                podcastId = "pod_4",
-                podcastTitle = "Shadow Files",
-                podcastCoverUrl = "https://images.unsplash.com/photo-1509248961158-e54f6934749c?w=400&auto=format&fit=crop&q=60&ixlib=rb-4.0.3",
-                title = "Project Cold Orbit: The 1978 Espionage Incident",
-                description = "During the height of the Cold War, a rogue satellite signal began broadcasting encrypted coordinates over the Pacific. We decode the declassified documents uncovering a massive naval intelligence operation.",
-                durationSeconds = 2400, // 40 mins
-                publishDate = "2026-08-28",
+                id = "ep_peterson_1",
+                podcastId = "pod_peterson_1184022695",
+                podcastTitle = "The Jordan B. Peterson Podcast",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/58/16/42/581642ef-7f31-d538-7c69-0a42ec25c604/mza_5721699391369703653.jpeg/600x600bb.jpg",
+                title = "The Architecture of Meaning & Psychological Responsibility",
+                description = "Dr. Jordan B. Peterson explores maps of meaning, the mythological archetype of the hero, and why bearing voluntary responsibility creates sustainable purpose in life.",
+                durationSeconds = 2700, // 45 mins
+                publishDate = "2026-08-31",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "600,1200",
-                chapters = "0:The Declassified Intercept|300:The Pacific Array|600:Cold War Encryption Protocols|1200:Naval Response & Countermeasures|1900:Legacy and Modern Espionage"
+                adTimestampsSeconds = "300,1200",
+                chapters = "0:Introduction & Genesis of Purpose|300:Sponsor: DailyWire+|390:Chaos, Order, and the Sacred Border|840:The Hero's Journey Across Cultures|1200:Sponsor: ExpressVPN|1290:Voluntary Confrontation with Adversity|2100:The Role of Art & Conscience|2550:Closing Reflections"
+            ),
+            EpisodeEntity(
+                id = "ep_batman_1",
+                podcastId = "pod_batman_1802737962",
+                podcastTitle = "DC High Volume: Batman",
+                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts221/v4/17/2c/78/172c787f-79ce-80e7-cec2-2f08d6f1cbb1/mza_17006185782027313788.jpeg/600x600bb.jpg",
+                title = "Episode 1: The Midnight Signal over Arkham",
+                description = "As a torrential storm batters Gotham City, an encrypted emergency broadcast triggers alarms across Wayne Manor. Batman investigates a series of coordinated escapes deep beneath Arkham Asylum.",
+                durationSeconds = 1500, // 25 mins
+                publishDate = "2026-09-04",
+                audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+                isDownloaded = false,
+                playbackPositionMs = 0,
+                adTimestampsSeconds = "90,720",
+                chapters = "0:Gotham City Siren & Storm|90:Sponsor: DC Universe Infinite|180:Descent into Arkham Lower Ward|450:Encounter with Scarecrow's Toxin|720:Ad Break: Batman Graphic Novels|810:The Batmobile Pursuit through Burnside|1200:The Riddler's Cryptic Warning|1410:To Be Continued..."
             )
         )
 
-        podcastDao.insertPodcasts(samplePodcasts)
-        podcastDao.insertEpisodes(sampleEpisodes)
-        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Database initialized with premium LabCast audio content"))
+        podcastDao.insertPodcasts(defaultPodcasts)
+        podcastDao.insertEpisodes(defaultEpisodes)
+        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
     }
 }

@@ -52,13 +52,26 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     val currentPlayingEpisode by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
     val showRemoteSyncPrompt by viewModel.showRemoteSyncPrompt.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
+    val isPlayerExpanded by viewModel.isPlayerExpanded.collectAsStateWithLifecycle()
+    val sponsorSkipEvent by viewModel.sponsorSkipEvent.collectAsStateWithLifecycle()
 
-    var isPlayerExpanded by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(sponsorSkipEvent) {
+        sponsorSkipEvent?.let { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short
+            )
+            viewModel.clearSponsorSkipEvent()
+        }
+    }
 
     val colors = LocalCustomColors.current
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             Column {
                 // Persistent Floating/Sliding Mini Player
@@ -71,7 +84,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         MiniPlayerSection(
                             episode = episode,
                             viewModel = viewModel,
-                            onExpand = { isPlayerExpanded = true }
+                            onExpand = { viewModel.openPlayer() }
                         )
                     }
                 }
@@ -293,7 +306,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     ) {
         FullPlayerScreen(
             viewModel = viewModel,
-            onCollapse = { isPlayerExpanded = false }
+            onCollapse = { viewModel.closePlayer() }
         )
     }
 }
@@ -1634,6 +1647,8 @@ fun EpisodeListItem(
             .clickable {
                 if (isMultiSelectMode && onToggleSelect != null) {
                     onToggleSelect()
+                } else {
+                    onPlayClick()
                 }
             }
             .testTag("episode_item_${episode.id}"),
@@ -2077,6 +2092,12 @@ fun FullPlayerScreen(
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
     val chapters by viewModel.currentChapters.collectAsStateWithLifecycle()
     val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
+    val waveformAmplitudes by viewModel.waveformAmplitudes.collectAsStateWithLifecycle()
+    val acousticAdSegments by viewModel.acousticAdSegments.collectAsStateWithLifecycle()
+    val currentAudioEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
+    val lastAcousticAdAlert by viewModel.lastAcousticAdAlert.collectAsStateWithLifecycle()
+    val adsBlockedCount by viewModel.adsBlockedCount.collectAsStateWithLifecycle()
+    val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
 
     var showChaptersSheet by remember { mutableStateOf(false) }
 
@@ -2247,84 +2268,214 @@ fun FullPlayerScreen(
                 }
             }
 
-            // Ad Skipper Console
-            AnimatedContent(
-                targetState = isAdActive,
-                label = "Ad Skipped Anim"
-            ) { active ->
-                if (active) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = AdGold.copy(alpha = 0.15f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, AdGold, RoundedCornerShape(12.dp)),
-                        shape = RoundedCornerShape(12.dp)
+            // Ad Skipper Control & Audio-Wave Anomaly Detector Console
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isAdActive) AdGold.copy(alpha = 0.16f) else DarkCharcoal
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        if (isAdActive) AdGold else if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.5f) else BorderGray,
+                        RoundedCornerShape(14.dp)
+                    )
+                    .testTag("player_ad_skipper_console"),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                ) {
+                    // Header Row with Switch ON / OFF
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Campaign, contentDescription = null, tint = AdGold)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "SPONSOR AD SEGMENT INTERCEPTED",
-                                    color = AdGold,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 0.5.sp
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .background(
+                                        if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.2f) else BorderGray.copy(alpha = 0.3f),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isAutoAdSkipEnabled) Icons.Default.Shield else Icons.Default.ShieldMoon,
+                                    contentDescription = null,
+                                    tint = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "LabCast Smart Skipper blocks tracking ads and sponsor interruptions instantly.",
-                                color = TextWhite,
-                                fontSize = 11.sp,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                lineHeight = 14.sp
-                            )
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Button(
-                                onClick = { viewModel.skipAdManually() },
-                                colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.testTag("full_skip_ad_button")
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Smart Ad & Wave Skipper",
+                                        color = TextWhite,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.2f) else BorderGray
+                                    ) {
+                                        Text(
+                                            text = if (isAutoAdSkipEnabled) "ON" else "OFF",
+                                            color = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (isAutoAdSkipEnabled) "Auto-zapping audio-wave spikes & sponsors" else "Ads allowed (switched off)",
+                                    color = if (isAutoAdSkipEnabled) CyberGreenGlow else TextGray,
+                                    fontSize = 10.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        // Direct Switch Right in Player-View
+                        Switch(
+                            checked = isAutoAdSkipEnabled,
+                            onCheckedChange = { viewModel.toggleAutoAdSkip() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = ObsidianBlack,
+                                checkedTrackColor = CyberGreen,
+                                uncheckedThumbColor = TextGray,
+                                uncheckedTrackColor = DarkCharcoal,
+                                uncheckedBorderColor = BorderGray
+                            ),
+                            modifier = Modifier.testTag("player_ad_skip_toggle_switch")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Dynamic Audio Waveform Strip with Ad Anomaly Zones
+                    if (waveformAmplitudes.isNotEmpty()) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.DoubleArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Zap Ad Segment", fontWeight = FontWeight.Black, fontSize = 12.sp)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.GraphicEq,
+                                        contentDescription = null,
+                                        tint = CyberGreen,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Acoustic Waveform Analysis",
+                                        color = TextGray,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = if (isAdActive) "⚡ AD WAVE SPIKE DETECTED" else "RMS Level: ${(currentAudioEnergy * 100).toInt()}%",
+                                    color = if (isAdActive) AdGold else CyberGreenGlow,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Audio Waveform Visualizer Bar
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(24.dp)
+                                    .background(ObsidianBlack.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                    .border(0.5.dp, BorderGray, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val totalBars = waveformAmplitudes.size
+                                    val currentProgressRatio = (playbackPositionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                                    val currentBarIndex = (currentProgressRatio * totalBars).toInt()
+
+                                    waveformAmplitudes.forEachIndexed { index, amp ->
+                                        val barSec = (index.toFloat() / totalBars) * (episode!!.durationSeconds)
+                                        val isAcousticAd = acousticAdSegments.any { barSec >= (it.startMs / 1000) && barSec <= (it.endMs / 1000) }
+                                        val isPast = index <= currentBarIndex
+
+                                        val barColor = when {
+                                            isAcousticAd -> if (isPast) AdGold else AdGold.copy(alpha = 0.5f)
+                                            isPast -> CyberGreen
+                                            else -> TextGray.copy(alpha = 0.35f)
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .padding(horizontal = 0.5.dp)
+                                                .fillMaxHeight(amp.coerceIn(0.15f, 1.0f))
+                                                .background(barColor, RoundedCornerShape(1.dp))
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                } else {
-                    // Standard Ad Block Info
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, BorderGray, RoundedCornerShape(12.dp)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Shield, contentDescription = null, tint = CyberGreen, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Auto Ad-Skipper Enabled", color = TextWhite, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
 
-                            // Quick trigger button to simulate/jump to ad for reviewer testability
-                            Button(
-                                onClick = { viewModel.seekTo(44000L) },
-                                colors = ButtonDefaults.buttonColors(containerColor = BorderGray, contentColor = CyberGreen),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                shape = RoundedCornerShape(6.dp),
-                                modifier = Modifier.height(24.dp).testTag("trigger_test_ad")
+                    // If an ad anomaly is detected while switch is OFF, give immediate skip option
+                    if (isAdActive) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = AdGold.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, AdGold)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Jump to Ad", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Campaign, contentDescription = null, tint = AdGold, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Ad / Wave Spike Playing",
+                                        color = AdGold,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Button(
+                                        onClick = { viewModel.skipAdManually() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(24.dp).testTag("zap_ad_button")
+                                    ) {
+                                        Icon(Icons.Default.DoubleArrow, contentDescription = null, modifier = Modifier.size(10.dp))
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text("Zap Ad", fontSize = 9.sp, fontWeight = FontWeight.Black)
+                                    }
+                                }
                             }
                         }
                     }
@@ -2676,7 +2827,32 @@ fun ChaptersBottomSheet(
                                     }
                                 }
 
-                                if (isActive) {
+                                if (chapter.isSponsorChapter()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = ErrorRed.copy(alpha = 0.2f),
+                                        border = BorderStroke(1.dp, ErrorRed)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Block,
+                                                contentDescription = null,
+                                                tint = ErrorRed,
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "SPONSOR (AUTO-SKIP)",
+                                                color = ErrorRed,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
+                                        }
+                                    }
+                                } else if (isActive) {
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
                                         color = CyberGreen.copy(alpha = 0.2f),

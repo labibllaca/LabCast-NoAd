@@ -50,6 +50,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
     val latestRelease by viewModel.latestRelease.collectAsStateWithLifecycle()
     val updateProgress by viewModel.updateDownloadProgress.collectAsStateWithLifecycle()
     val lastCheckedTime by viewModel.lastCheckedTime.collectAsStateWithLifecycle()
+    val updateErrorMessage by viewModel.updateErrorMessage.collectAsStateWithLifecycle()
 
     var repoInput by remember(gitHubRepo) { mutableStateOf(gitHubRepo) }
     var showWorkflowCode by remember { mutableStateOf(false) }
@@ -514,8 +515,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                         if (updateStatus == PodcastViewModel.UpdateStatus.READY_TO_INSTALL) {
                                             Button(
                                                 onClick = {
-                                                    // In production, would prompt Android PackageInstaller intent
-                                                    viewModel.resetUpdateState()
+                                                    viewModel.installDownloadedApk(context)
                                                 },
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = CyberGreen,
@@ -561,6 +561,124 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text("GitHub", fontSize = 12.sp)
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // UP TO DATE STATUS CARD
+                    // ==========================================
+                    AnimatedVisibility(visible = updateStatus == PodcastViewModel.UpdateStatus.UP_TO_DATE) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (colors.isDark) Color(0xFF0D2818) else Color(0xFFF0FDF4)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth().testTag("update_up_to_date_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "App ist auf dem neuesten Stand",
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = updateErrorMessage ?: "Installierte Version (${viewModel.currentAppVersion}) entspricht dem neuesten Release auf GitHub.",
+                                        color = colors.textMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ==========================================
+                    // ERROR CARD
+                    // ==========================================
+                    AnimatedVisibility(visible = updateStatus == PodcastViewModel.UpdateStatus.ERROR) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (colors.isDark) Color(0xFF2B1214) else Color(0xFFFEF2F2)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth().testTag("update_error_card")
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.ErrorOutline,
+                                        contentDescription = null,
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Update-Prüfung / Download Fehlgeschlagen",
+                                        color = if (colors.isDark) Color(0xFFFCA5A5) else Color(0xFF991B1B),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = updateErrorMessage ?: "Ein Fehler ist bei der Kontaktaufnahme mit GitHub aufgetreten.",
+                                    color = colors.textPrimary,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = { viewModel.checkForGitHubUpdates() },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFEF4444),
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f).testTag("btn_retry_update_check")
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Erneut prüfen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            val cleanRepo = repoInput.trim().removePrefix("https://github.com/").removeSuffix("/")
+                                            val url = "https://github.com/$cleanRepo"
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            context.startActivity(intent)
+                                        },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            contentColor = colors.textPrimary
+                                        ),
+                                        border = BorderStroke(1.dp, colors.itemBorder),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.testTag("btn_open_repo_on_error")
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("GitHub öffnen", fontSize = 12.sp)
                                     }
                                 }
                             }

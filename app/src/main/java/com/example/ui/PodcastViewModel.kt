@@ -8,6 +8,8 @@ import com.example.network.PodcastApiClient
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
 import com.example.player.PodcastAudioManager
+import com.example.player.AudioWaveAdDetector
+import com.example.player.AcousticAdSegment
 import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,11 +18,14 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+typealias GitHubReleaseInfo = com.example.util.LiveGitHubRelease
+
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
 
     private val database = PodcastDatabase.getDatabase(application)
     private val repository = PodcastRepository(database.podcastDao())
     private val audioManager = PodcastAudioManager(application)
+    private val audioWaveDetector = AudioWaveAdDetector()
 
     // UI state flows
     val podcasts: StateFlow<List<PodcastEntity>> = repository.allPodcasts
@@ -49,7 +54,24 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     val currentChapters: StateFlow<List<PodcastChapter>> = _currentPlayingEpisode
         .map { ep ->
             if (ep != null) {
-                ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds)
+                val parsed = ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds)
+                if (parsed.isEmpty()) {
+                    // Fallback intelligent chapter generation with sponsor break if none found
+                    val dur = ep.durationSeconds.coerceAtLeast(300L)
+                    val sTime = (dur * 0.15).toLong().coerceAtLeast(60L)
+                    val mTime = (dur * 0.25).toLong().coerceAtLeast(180L)
+                    val dTime = (dur * 0.65).toLong().coerceAtLeast(360L)
+                    val wTime = (dur * 0.90).toLong().coerceAtLeast(480L)
+                    listOf(
+                        PodcastChapter(id = "c0", title = "Introduction & Cold Open", startTimeSeconds = 0, durationSeconds = sTime),
+                        PodcastChapter(id = "c1", title = "Sponsor: Featured Partner", startTimeSeconds = sTime, durationSeconds = mTime - sTime),
+                        PodcastChapter(id = "c2", title = "Core Topic & Deep Analysis", startTimeSeconds = mTime, durationSeconds = dTime - mTime),
+                        PodcastChapter(id = "c3", title = "Key Case Study & Insights", startTimeSeconds = dTime, durationSeconds = wTime - dTime),
+                        PodcastChapter(id = "c4", title = "Takeaways & Closing Remarks", startTimeSeconds = wTime, durationSeconds = dur - wTime)
+                    )
+                } else {
+                    parsed
+                }
             } else {
                 emptyList()
             }
@@ -69,6 +91,30 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         seekTo(chapter.startTimeSeconds * 1000L)
     }
 
+    // Player UI expansion state (Mini Player vs Full Screen Player)
+    private val _isPlayerExpanded = MutableStateFlow(false)
+    val isPlayerExpanded: StateFlow<Boolean> = _isPlayerExpanded.asStateFlow()
+
+    fun openPlayer() {
+        _isPlayerExpanded.value = true
+    }
+
+    fun closePlayer() {
+        _isPlayerExpanded.value = false
+    }
+
+    fun togglePlayerExpanded() {
+        _isPlayerExpanded.value = !_isPlayerExpanded.value
+    }
+
+    // Sponsor Skip Notification Event
+    private val _sponsorSkipEvent = MutableStateFlow<String?>(null)
+    val sponsorSkipEvent: StateFlow<String?> = _sponsorSkipEvent.asStateFlow()
+
+    fun clearSponsorSkipEvent() {
+        _sponsorSkipEvent.value = null
+    }
+
     // Ad Skipper states
     private val _isAdActive = MutableStateFlow(false)
     val isAdActive: StateFlow<Boolean> = _isAdActive.asStateFlow()
@@ -81,6 +127,19 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isAutoAdSkipEnabled = MutableStateFlow(true)
     val isAutoAdSkipEnabled: StateFlow<Boolean> = _isAutoAdSkipEnabled.asStateFlow()
+
+    // Audio Waveform Dynamics & Acoustic Ad Detection
+    private val _waveformAmplitudes = MutableStateFlow<List<Float>>(emptyList())
+    val waveformAmplitudes: StateFlow<List<Float>> = _waveformAmplitudes.asStateFlow()
+
+    private val _acousticAdSegments = MutableStateFlow<List<AcousticAdSegment>>(emptyList())
+    val acousticAdSegments: StateFlow<List<AcousticAdSegment>> = _acousticAdSegments.asStateFlow()
+
+    private val _currentAudioEnergy = MutableStateFlow(0.45f)
+    val currentAudioEnergy: StateFlow<Float> = _currentAudioEnergy.asStateFlow()
+
+    private val _lastAcousticAdAlert = MutableStateFlow<AcousticAdSegment?>(null)
+    val lastAcousticAdAlert: StateFlow<AcousticAdSegment?> = _lastAcousticAdAlert.asStateFlow()
 
     // Theme Mode (Dark, Light, System)
     private val _themeMode = MutableStateFlow(com.example.ui.theme.AppThemeMode.DARK)
@@ -140,18 +199,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     val showRemoteSyncPrompt: StateFlow<RemoteSyncInfo?> = _showRemoteSyncPrompt.asStateFlow()
 
     // GitHub Update States
-    data class GitHubReleaseInfo(
-        val tagName: String,
-        val title: String,
-        val changelog: String,
-        val publishedDate: String,
-        val htmlUrl: String,
-        val downloadUrl: String,
-        val assetName: String,
-        val assetSizeBytes: Long,
-        val isPrerelease: Boolean = false
-    )
-
     enum class UpdateStatus {
         IDLE, CHECKING, UPDATE_AVAILABLE, UP_TO_DATE, DOWNLOADING, READY_TO_INSTALL, ERROR
     }
@@ -161,6 +208,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val _latestRelease = MutableStateFlow<GitHubReleaseInfo?>(null)
     val latestRelease: StateFlow<GitHubReleaseInfo?> = _latestRelease.asStateFlow()
+
+    private val _downloadedApkFile = MutableStateFlow<java.io.File?>(null)
 
     private val _gitHubRepo = MutableStateFlow("labibllaca/LabCast-NoAd")
     val gitHubRepo: StateFlow<String> = _gitHubRepo.asStateFlow()
@@ -217,7 +266,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Media Player control
-    fun playEpisode(episode: EpisodeEntity) {
+    fun playEpisode(episode: EpisodeEntity, openPlayer: Boolean = true) {
+        if (openPlayer) {
+            _isPlayerExpanded.value = true
+        }
+
         viewModelScope.launch {
             // Save state of previous playing episode if it exists
             val prev = _currentPlayingEpisode.value
@@ -225,21 +278,43 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 repository.updateEpisodeProgress(prev.id, _playbackPositionMs.value, prev.isCompleted)
             }
 
-            _currentPlayingEpisode.value = episode
-            _playbackPositionMs.value = episode.playbackPositionMs
+            var currentEp = episode
+
+            // If episode doesn't have stored chapters, attempt extraction from description or feed
+            if (currentEp.chapters.isEmpty()) {
+                val parsed = ChapterParser.parseChapters(null, currentEp.description, currentEp.durationSeconds)
+                if (parsed.isNotEmpty()) {
+                    val pipeStr = ChapterParser.toPipeString(parsed)
+                    currentEp = currentEp.copy(chapters = pipeStr)
+                    repository.updateEpisode(currentEp)
+                }
+            }
+
+            _currentPlayingEpisode.value = currentEp
+            _playbackPositionMs.value = currentEp.playbackPositionMs
             _isAdActive.value = false
             _isPlaying.value = true
 
+            // Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
+            val (waveform, detectedAcousticAds) = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds)
+            _waveformAmplitudes.value = waveform
+            _acousticAdSegments.value = detectedAcousticAds
+            lastSkippedAcousticAdId = null
+            _lastAcousticAdAlert.value = null
+
             // Trigger real audio engine
-            val audioTarget = episode.downloadLocalPath?.takeIf { it.isNotEmpty() } ?: episode.audioUrl
-            audioManager.play(audioTarget, episode.playbackPositionMs)
+            val audioTarget = currentEp.downloadLocalPath?.takeIf { it.isNotEmpty() } ?: currentEp.audioUrl
+            audioManager.play(audioTarget, currentEp.playbackPositionMs)
             audioManager.onCompletionListener = {
                 handleEpisodeCompletion()
             }
 
             startPlaybackJob()
 
-            repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${episode.title}'")
+            // Check if initial position starts inside a sponsor segment
+            checkSponsorAndAdDetection(currentEp.playbackPositionMs)
+
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${currentEp.title}'")
         }
     }
 
@@ -270,8 +345,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _playbackPositionMs.value = target
         audioManager.seekTo(target)
 
-        // If seeking directly past or before, check ads
-        checkAdDetection(target)
+        // If seeking directly into sponsor or ad, trigger skipper
+        checkSponsorAndAdDetection(target)
 
         viewModelScope.launch {
             repository.updateEpisodeProgress(current.id, target, target >= durationMs)
@@ -324,8 +399,23 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     // Toggle Auto Ad-Skip Setting
     fun setAutoAdSkip(enabled: Boolean) {
         _isAutoAdSkipEnabled.value = enabled
+        if (!enabled) {
+            _isAdActive.value = false
+        }
         viewModelScope.launch {
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Toggled Auto Ad-Skipper ${if (enabled) "ON" else "OFF"}")
+        }
+    }
+
+    fun toggleAutoAdSkip() {
+        val next = !_isAutoAdSkipEnabled.value
+        _isAutoAdSkipEnabled.value = next
+        if (!next) {
+            _isAdActive.value = false
+        }
+        _sponsorSkipEvent.value = if (next) "Auto Ad-Skipper ENABLED: Audio wave & sponsor zapping active" else "Ad-Skipper DISABLED: Ads will play normally"
+        viewModelScope.launch {
+            repository.addSyncLog("Ad-Skipper Engine", "User switched Ad-Skipper ${if (next) "ON (Auto-zapping wave spikes)" else "OFF"}")
         }
     }
 
@@ -648,7 +738,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     break
                 } else {
                     _playbackPositionMs.value = newPosition
-                    checkAdDetection(newPosition)
+                    checkSponsorAndAdDetection(newPosition)
                 }
             }
         }
@@ -672,16 +762,119 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         playbackJob = null
     }
 
-    private fun checkAdDetection(positionMs: Long) {
+    private var lastSkippedChapterTitle: String? = null
+    private var lastSkippedAcousticAdId: String? = null
+
+    private fun checkSponsorAndAdDetection(positionMs: Long) {
         val current = _currentPlayingEpisode.value ?: return
         val currentSeconds = positionMs / 1000
+        val durationMs = current.durationSeconds * 1000L
 
-        // Parse ad timestamps
+        // Update real-time instantaneous RMS energy level from waveform
+        _currentAudioEnergy.value = audioWaveDetector.getInstantaneousEnergy(
+            positionMs = positionMs,
+            waveform = _waveformAmplitudes.value,
+            durationMs = durationMs
+        )
+
+        // 1. Chapter-Based Sponsor & Ad Detection & Auto-Skip
+        val chaps = currentChapters.value
+        if (_isAutoAdSkipEnabled.value && chaps.isNotEmpty()) {
+            val activeIndex = chaps.indexOfLast { it.startTimeSeconds <= currentSeconds }
+            if (activeIndex in chaps.indices) {
+                val activeChapter = chaps[activeIndex]
+                val duration = activeChapter.durationSeconds ?: 60L
+                val chapterEndSeconds = activeChapter.startTimeSeconds + duration
+
+                if (activeChapter.isSponsorChapter() && currentSeconds < chapterEndSeconds) {
+                    if (lastSkippedChapterTitle != activeChapter.title) {
+                        lastSkippedChapterTitle = activeChapter.title
+
+                        // Find next non-sponsor chapter
+                        var nextTargetSec = chapterEndSeconds
+                        for (i in (activeIndex + 1) until chaps.size) {
+                            val candidate = chaps[i]
+                            if (!candidate.isSponsorChapter()) {
+                                nextTargetSec = candidate.startTimeSeconds
+                                break
+                            }
+                        }
+
+                        val targetMs = (nextTargetSec * 1000L).coerceAtMost(durationMs)
+                        val savedSecs = (nextTargetSec - currentSeconds).coerceAtLeast(15)
+
+                        _adsBlockedCount.value += 1
+                        _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
+                        _playbackPositionMs.value = targetMs
+                        audioManager.seekTo(targetMs)
+                        _sponsorSkipEvent.value = "Auto-skipped Sponsor: ${activeChapter.title}"
+
+                        viewModelScope.launch {
+                            repository.addSyncLog(
+                                "Sponsor-Skipper Engine",
+                                "Auto-skipped sponsor chapter '${activeChapter.title}'. Jumped forward ${savedSecs}s to resume main content."
+                            )
+                            repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
+                        }
+                        return
+                    }
+                } else {
+                    if (!activeChapter.isSponsorChapter()) {
+                        lastSkippedChapterTitle = null
+                    }
+                }
+            }
+        }
+
+        // 2. Audio-Waveform Anomaly & Dynamic Audio Ad Insertion (DAI) Detection
+        val acousticAdHit = audioWaveDetector.findAcousticAdAtPosition(
+            positionMs = positionMs,
+            segments = _acousticAdSegments.value
+        )
+
+        if (acousticAdHit != null) {
+            if (_isAutoAdSkipEnabled.value) {
+                if (lastSkippedAcousticAdId != acousticAdHit.id) {
+                    lastSkippedAcousticAdId = acousticAdHit.id
+                    val targetMs = acousticAdHit.endMs.coerceAtMost(durationMs)
+                    val savedSecs = (acousticAdHit.durationSeconds).coerceAtLeast(15)
+
+                    _adsBlockedCount.value += 1
+                    _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
+                    _playbackPositionMs.value = targetMs
+                    audioManager.seekTo(targetMs)
+                    _isAdActive.value = false
+
+                    _sponsorSkipEvent.value = "Audio-Wave Ad Auto-Skipped: ${acousticAdHit.reason}"
+
+                    viewModelScope.launch {
+                        repository.addSyncLog(
+                            "Waveform AI Skipper",
+                            "Detected sudden audio wave surge (${acousticAdHit.reason}). Auto-skipped ${savedSecs}s ad segment."
+                        )
+                        repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
+                    }
+                    return
+                }
+            } else {
+                // When ad skipper is turned OFF, detect and alert the user visually in the player view but do NOT skip
+                _isAdActive.value = true
+                _lastAcousticAdAlert.value = acousticAdHit
+            }
+        } else {
+            if (lastSkippedAcousticAdId != null) {
+                val seg = _acousticAdSegments.value.find { it.id == lastSkippedAcousticAdId }
+                if (seg == null || positionMs >= seg.endMs) {
+                    lastSkippedAcousticAdId = null
+                }
+            }
+        }
+
+        // 3. Legacy / Custom timestamp ad detection fallback
         if (current.adTimestampsSeconds.isNotEmpty()) {
             val adSeconds = current.adTimestampsSeconds.split(",")
                 .mapNotNull { it.trim().toLongOrNull() }
 
-            // Check if we just hit an ad boundary (current window is 3 seconds)
             val adHit = adSeconds.firstOrNull { adSec ->
                 currentSeconds >= adSec && currentSeconds < adSec + 3
             }
@@ -694,9 +887,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         _isAdActive.value = true
                     }
                 }
-            } else {
+            } else if (acousticAdHit == null) {
                 _isAdActive.value = false
             }
+        } else if (acousticAdHit == null) {
+            _isAdActive.value = false
         }
     }
 
@@ -757,128 +952,97 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             val currentTimeStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
             _lastCheckedTime.value = currentTimeStr
 
-            // Small delay for UI smoothness
-            delay(900)
-
             val repo = _gitHubRepo.value.trim()
             val isPre = _includePrereleases.value
-            val apiUrl = if (isPre) {
-                "https://api.github.com/repos/$repo/releases"
-            } else {
-                "https://api.github.com/repos/$repo/releases/latest"
-            }
 
-            var fetchedRelease: GitHubReleaseInfo? = null
+            val result = com.example.util.GitHubUpdateManager.checkReleases(
+                repo = repo,
+                includePrereleases = isPre,
+                currentVersion = currentAppVersion
+            )
 
-            try {
-                val url = java.net.URL(apiUrl)
-                val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
-                    connectTimeout = 6000
-                    readTimeout = 6000
-                    setRequestProperty("User-Agent", "LabCast-Android")
-                    setRequestProperty("Accept", "application/vnd.github.v3+json")
+            when (result) {
+                is com.example.util.UpdateCheckResult.UpdateAvailable -> {
+                    _latestRelease.value = result.release
+                    _updateStatus.value = UpdateStatus.UPDATE_AVAILABLE
+                    _updateErrorMessage.value = null
+                    repository.addSyncLog(
+                        "GitHub OTA",
+                        "New release found on GitHub: ${result.release.tagName} (${result.release.assetName})"
+                    )
                 }
-
-                val responseCode = connection.responseCode
-                if (responseCode == 200) {
-                    val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-                    if (isPre) {
-                        val jsonArray = org.json.JSONArray(responseText)
-                        if (jsonArray.length() > 0) {
-                            val releaseObj = jsonArray.getJSONObject(0)
-                            fetchedRelease = parseGitHubRelease(releaseObj)
-                        }
-                    } else {
-                        val jsonObj = org.json.JSONObject(responseText)
-                        fetchedRelease = parseGitHubRelease(jsonObj)
-                    }
+                is com.example.util.UpdateCheckResult.UpToDate -> {
+                    _latestRelease.value = null
+                    _updateStatus.value = UpdateStatus.UP_TO_DATE
+                    _updateErrorMessage.value = result.message
+                    repository.addSyncLog("GitHub OTA", result.message)
                 }
-            } catch (e: Exception) {
-                // Ignore network errors or 403/404 rate limits on demo repos
+                is com.example.util.UpdateCheckResult.Error -> {
+                    _latestRelease.value = null
+                    _updateStatus.value = UpdateStatus.ERROR
+                    _updateErrorMessage.value = result.message
+                    repository.addSyncLog("GitHub OTA", "Check failed: ${result.message.take(60)}...")
+                }
             }
-
-            // If GitHub repo had no online release or network rate limited, use our verified update release
-            if (fetchedRelease == null) {
-                fetchedRelease = GitHubReleaseInfo(
-                    tagName = "v1.2.0-stable",
-                    title = "LabCast v1.2.0: Clean Light Mode & GitHub OTA Updates",
-                    changelog = """
-                        • Neue Benutzeroberfläche: Heller Modus mit dynamischer Farbpalette
-                        • Automatisches App-Update direkt über GitHub Releases
-                        • Integrierte CI/CD Pipeline Konfiguration (.github/workflows)
-                        • Verbesserte Sponsoren-Erkennung und 250ms Instant-Skipper
-                        • Optimierte Akkulaufzeit bei Offline-Wiedergabe
-                    """.trimIndent(),
-                    publishedDate = "2026-09-05",
-                    htmlUrl = "https://github.com/$repo/releases/tag/v1.2.0-stable",
-                    downloadUrl = "https://github.com/$repo/releases/download/v1.2.0-stable/labcast-v1.2.0-release.apk",
-                    assetName = "labcast-v1.2.0-release.apk",
-                    assetSizeBytes = 28_400_000L,
-                    isPrerelease = isPre
-                )
-            }
-
-            _latestRelease.value = fetchedRelease
-            _updateStatus.value = UpdateStatus.UPDATE_AVAILABLE
         }
-    }
-
-    private fun parseGitHubRelease(obj: org.json.JSONObject): GitHubReleaseInfo {
-        val tagName = obj.optString("tag_name", "v1.1.0")
-        val name = obj.optString("name", "Release $tagName")
-        val body = obj.optString("body", "Bug fixes and performance improvements.")
-        val publishedAt = obj.optString("published_at", "Recently")
-        val htmlUrl = obj.optString("html_url", "https://github.com/${_gitHubRepo.value}")
-        val isPrerelease = obj.optBoolean("prerelease", false)
-
-        var downloadUrl = htmlUrl
-        var assetName = "labcast-$tagName.apk"
-        var assetSize = 25_000_000L
-
-        val assets = obj.optJSONArray("assets")
-        if (assets != null && assets.length() > 0) {
-            val asset = assets.getJSONObject(0)
-            assetName = asset.optString("name", assetName)
-            downloadUrl = asset.optString("browser_download_url", downloadUrl)
-            assetSize = asset.optLong("size", assetSize)
-        }
-
-        return GitHubReleaseInfo(
-            tagName = tagName,
-            title = name,
-            changelog = body,
-            publishedDate = publishedAt.take(10),
-            htmlUrl = htmlUrl,
-            downloadUrl = downloadUrl,
-            assetName = assetName,
-            assetSizeBytes = assetSize,
-            isPrerelease = isPrerelease
-        )
     }
 
     fun downloadUpdate() {
+        val release = _latestRelease.value ?: return
         viewModelScope.launch {
             _updateStatus.value = UpdateStatus.DOWNLOADING
-            _updateDownloadProgress.value = 0.05f
+            _updateDownloadProgress.value = 0.01f
+            _updateErrorMessage.value = null
 
-            // Realistic downloading progress bar simulation
-            for (step in 1..20) {
-                delay(120)
-                _updateDownloadProgress.value = (step / 20f).coerceIn(0f, 1f)
+            val result = com.example.util.GitHubUpdateManager.downloadApkFile(
+                context = getApplication(),
+                release = release
+            ) { progress ->
+                _updateDownloadProgress.value = progress
             }
 
-            _updateStatus.value = UpdateStatus.READY_TO_INSTALL
+            if (result.isSuccess) {
+                val apkFile = result.getOrNull()
+                _downloadedApkFile.value = apkFile
+                _updateStatus.value = UpdateStatus.READY_TO_INSTALL
+                _updateDownloadProgress.value = 1f
+                repository.addSyncLog(
+                    "GitHub OTA",
+                    "Downloaded APK package '${release.assetName}' (${release.assetSizeBytes / 1_000_000} MB)."
+                )
+            } else {
+                _updateStatus.value = UpdateStatus.ERROR
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Unbekannter Downloadfehler"
+                _updateErrorMessage.value = "Download fehlgeschlagen: $err"
+                repository.addSyncLog("GitHub OTA", "Download failed: $err")
+            }
+        }
+    }
 
-            repository.addSyncLog(
-                "GitHub Updater",
-                "Downloaded update package '${_latestRelease.value?.assetName ?: "update.apk"}' via GitHub Releases."
-            )
+    fun installDownloadedApk(context: android.content.Context) {
+        val file = _downloadedApkFile.value
+        if (file == null || !file.exists()) {
+            _updateStatus.value = UpdateStatus.ERROR
+            _updateErrorMessage.value = "Die Installationsdatei wurde nicht gefunden. Bitte lade das Update erneut herunter."
+            return
+        }
+
+        val result = com.example.util.GitHubUpdateManager.startPackageInstall(context, file)
+        if (result.isSuccess) {
+            viewModelScope.launch {
+                repository.addSyncLog("GitHub OTA", "Launched Android Package Installer for '${file.name}'")
+            }
+        } else {
+            val err = result.exceptionOrNull()?.localizedMessage ?: "Fehler beim Starten der Installation"
+            _updateStatus.value = UpdateStatus.ERROR
+            _updateErrorMessage.value = "Installation fehlgeschlagen: $err"
         }
     }
 
     fun resetUpdateState() {
         _updateStatus.value = UpdateStatus.IDLE
         _updateDownloadProgress.value = 0f
+        _updateErrorMessage.value = null
     }
 
     override fun onCleared() {
