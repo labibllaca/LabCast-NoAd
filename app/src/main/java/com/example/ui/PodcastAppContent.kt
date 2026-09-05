@@ -20,6 +20,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,7 +30,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -428,6 +434,8 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                         .border(1.dp, colors.itemBorder, RoundedCornerShape(14.dp))
                         .padding(12.dp)
                 ) {
+                    val keyboardController = LocalSoftwareKeyboardController.current
+
                     // Search Input Box
                     Row(
                         modifier = Modifier
@@ -465,8 +473,26 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                                 unfocusedTextColor = colors.textPrimary
                             ),
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onSearch = {
+                                    viewModel.performSearch()
+                                    keyboardController?.hide()
+                                }
+                            ),
                             modifier = Modifier
                                 .weight(1f)
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyUp) {
+                                        viewModel.performSearch()
+                                        keyboardController?.hide()
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
                                 .testTag("input_podcast_search")
                         )
 
@@ -953,6 +979,7 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
 // ==========================================
 // PODCAST DETAIL SCREEN
 // ==========================================
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onBack: () -> Unit) {
     val colors = LocalCustomColors.current
@@ -961,6 +988,7 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
     val isMultiSelectMode by viewModel.isMultiSelectMode.collectAsStateWithLifecycle()
     val selectedEpisodeIds by viewModel.selectedEpisodeIds.collectAsStateWithLifecycle()
     val isBatchDownloading by viewModel.isBatchDownloading.collectAsStateWithLifecycle()
+    val isRefreshingEpisodes by viewModel.isRefreshingEpisodes.collectAsStateWithLifecycle()
 
     val podcastEpisodes = episodes.filter { it.podcastId == podcast.id }
 
@@ -972,31 +1000,99 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
 
     val nonDownloadedEpisodes = filteredEpisodes.filter { !it.isDownloaded }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    PullToRefreshBox(
+        isRefreshing = isRefreshingEpisodes,
+        onRefresh = { viewModel.refreshPodcastEpisodes(podcast.id, isAutoOneHour = false) },
+        modifier = Modifier.fillMaxSize()
     ) {
-        // Back navigation
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clickable { onBack() }
-                    .padding(vertical = 4.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = CyberGreen,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Back to Discover", color = CyberGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Back navigation & Top Refresh indicator
+            item {
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { onBack() }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = CyberGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Back to Discover", color = CyberGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+
+                    // Top Refresh Action Icon
+                    IconButton(
+                        onClick = { viewModel.refreshPodcastEpisodes(podcast.id, isAutoOneHour = false) },
+                        enabled = !isRefreshingEpisodes,
+                        modifier = Modifier.size(32.dp).testTag("btn_top_refresh_episodes")
+                    ) {
+                        if (isRefreshingEpisodes) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = CyberGreen,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh Episodes",
+                                tint = CyberGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
-        }
+
+            // Refresh Status Pill Banner
+            item {
+                AnimatedVisibility(
+                    visible = isRefreshingEpisodes,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CyberGreen.copy(alpha = 0.12f)),
+                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                color = CyberGreen,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Refreshing newest episodes from RSS feed...",
+                                color = CyberGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
 
         // Podcast Details Hero
         item {
@@ -1232,6 +1328,7 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
         }
     }
 }
+}
 
 // ==========================================
 // 2. OFFLINE TAB (DOWNLOADS SCREEN)
@@ -1400,6 +1497,11 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
 @Composable
 fun SyncHubScreen(viewModel: PodcastViewModel) {
     val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
+    val currentEpisode by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
+    val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
+    val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val audioWaveEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
 
     // Mock companions
     val devices = listOf(
@@ -1408,6 +1510,8 @@ fun SyncHubScreen(viewModel: PodcastViewModel) {
         DeviceItem("iPad Air", "Synced 1h ago", Icons.Default.TabletMac, false),
         DeviceItem("Chrome Player", "Synced 5h ago", Icons.Default.LaptopMac, false)
     )
+
+    val currentDurationMs = (currentEpisode?.durationSeconds ?: 0L) * 1000L
 
     LazyColumn(
         modifier = Modifier
@@ -1418,16 +1522,195 @@ fun SyncHubScreen(viewModel: PodcastViewModel) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Multi-Device Sync Hub",
+                text = "Multi-Device Sync & System Hub",
                 color = TextWhite,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black
             )
             Text(
-                text = "Synchronize listening progress dynamically with cloud database.",
+                text = "Synchronize listening progress dynamically with cloud database & monitor system player console.",
                 color = TextGray,
                 fontSize = 12.sp
             )
+        }
+
+        // ==========================================
+        // SYSTEM CONSOLE AUDIO PLAYER MONITOR
+        // ==========================================
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1217)),
+                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("card_system_console_player")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Header with Live Terminal Indicator
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isPlaying) CyberGreen else AdGold)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "SYSTEM CONSOLE AUDIO ENGINE",
+                                color = CyberGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 1.sp
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isPlaying) CyberGreen.copy(alpha = 0.2f) else DarkCharcoal
+                        ) {
+                            Text(
+                                text = if (isPlaying) "OUTPUT: LIVE" else if (currentEpisode != null) "OUTPUT: PAUSED" else "IDLE",
+                                color = if (isPlaying) CyberGreen else TextGray,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (currentEpisode != null) {
+                        // Currently Loaded Episode in System Console
+                        Text(
+                            text = currentEpisode?.title ?: "Unknown Track",
+                            color = TextWhite,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = currentEpisode?.podcastTitle ?: "Podcast Audio Stream",
+                            color = TextGray,
+                            fontSize = 11.sp,
+                            maxLines = 1
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Progress Bar
+                        LinearProgressIndicator(
+                            progress = { if (currentDurationMs > 0) playbackPositionMs.toFloat() / currentDurationMs.toFloat() else 0f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(4.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = CyberGreen,
+                            trackColor = BorderGray
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(viewModel.formatDuration(playbackPositionMs / 1000), color = TextGray, fontSize = 10.sp)
+                            Text(
+                                "RMS Energy: ${(audioWaveEnergy * 100).toInt()}%",
+                                color = if (audioWaveEnergy > 0.82f) AdGold else CyberGreenGlow,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(viewModel.formatDuration(currentDurationMs / 1000), color = TextGray, fontSize = 10.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Console Controls & Auto Ad-Skipper Status
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable { viewModel.toggleAutoAdSkip() }
+                            ) {
+                                Icon(
+                                    imageVector = if (isAutoAdSkipEnabled) Icons.Default.AutoAwesome else Icons.Default.DoNotDisturb,
+                                    contentDescription = null,
+                                    tint = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isAutoAdSkipEnabled) "Wave Ad-Skip ON" else "Wave Ad-Skip OFF",
+                                    color = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { viewModel.skipBackward() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Replay10, contentDescription = "Rewind", tint = TextWhite, modifier = Modifier.size(20.dp))
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.togglePlayPause() },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(CyberGreen, CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = if (isPlaying) "Pause" else "Play",
+                                        tint = ObsidianBlack,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.skipForward() },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Default.Forward30, contentDescription = "Forward", tint = TextWhite, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+                    } else {
+                        // Empty state in System Console
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(DarkCharcoal.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.GraphicEq, contentDescription = null, tint = TextGray, modifier = Modifier.size(24.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("No Active Playback Stream", color = TextWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Select any episode in Discover to start the system console stream.", color = TextGray, fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Active devices list

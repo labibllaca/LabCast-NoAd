@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
@@ -245,6 +246,14 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val remotePositionMs: Long
     )
 
+    // Refresh state for podcast episodes
+    private val _isRefreshingEpisodes = MutableStateFlow(false)
+    val isRefreshingEpisodes: StateFlow<Boolean> = _isRefreshingEpisodes.asStateFlow()
+
+    // Last refresh timestamp tracking (per podcast ID)
+    private val lastRefreshTimestamps = mutableMapOf<String, Long>()
+    private val appLaunchTimestamp = System.currentTimeMillis()
+
     init {
         viewModelScope.launch {
             repository.populateInitialDataIfNeeded()
@@ -260,9 +269,80 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Podcast Detail control
+    // Podcast Detail control with auto-refresh if > 1 hour since opening/last refresh
     fun selectPodcast(podcast: PodcastEntity?) {
         _selectedPodcast.value = podcast
+        if (podcast != null) {
+            val lastRefresh = lastRefreshTimestamps[podcast.id] ?: 0L
+            val oneHourMs = 3600_000L
+            val now = System.currentTimeMillis()
+
+            // If never refreshed in this session or last refresh was longer than 1 hour ago
+            if (lastRefresh == 0L || (now - lastRefresh) >= oneHourMs) {
+                val timeDiffMin = if (lastRefresh == 0L) ">1h" else "${(now - lastRefresh) / 60000}m"
+                Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Auto-refresh triggered for '${podcast.title}' (last refresh: $timeDiffMin)")
+                refreshPodcastEpisodes(podcast.id, isAutoOneHour = true)
+            }
+        }
+    }
+
+    // Manual Swipe-Down or Auto Refresh for Podcast Episodes
+    fun refreshPodcastEpisodes(podcastId: String, isAutoOneHour: Boolean = false) {
+        viewModelScope.launch {
+            val podcast = repository.getPodcastById(podcastId) ?: _selectedPodcast.value ?: return@launch
+            _isRefreshingEpisodes.value = true
+            lastRefreshTimestamps[podcastId] = System.currentTimeMillis()
+
+            try {
+                Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Fetching latest episodes for '${podcast.title}' from feed: ${podcast.feedUrl}")
+                val fetched = withContext(Dispatchers.IO) {
+                    PodcastApiClient.fetchEpisodesForFeed(podcast.feedUrl, podcast.title)
+                }
+
+                if (fetched.isNotEmpty()) {
+                    val existing = repository.getEpisodesForPodcast(podcastId).first()
+                    val existingMap = existing.associateBy { it.id }
+
+                    val mergedEpisodes = fetched.map { f ->
+                        val prev = existingMap[f.id] ?: existing.firstOrNull { it.title.equals(f.title, ignoreCase = true) }
+                        EpisodeEntity(
+                            id = prev?.id ?: f.id,
+                            podcastId = podcast.id,
+                            podcastTitle = podcast.title,
+                            podcastCoverUrl = podcast.coverUrl,
+                            title = f.title,
+                            description = f.description,
+                            durationSeconds = f.durationSeconds,
+                            publishDate = f.publishDate,
+                            audioUrl = f.audioUrl,
+                            isDownloaded = prev?.isDownloaded ?: false,
+                            downloadLocalPath = prev?.downloadLocalPath,
+                            playbackPositionMs = prev?.playbackPositionMs ?: 0L,
+                            isCompleted = prev?.isCompleted ?: false,
+                            isFavorite = prev?.isFavorite ?: false,
+                            adTimestampsSeconds = f.adTimestampsSeconds,
+                            chapters = f.chapters
+                        )
+                    }
+
+                    repository.insertEpisodes(mergedEpisodes)
+
+                    val statusMsg = if (isAutoOneHour) {
+                        "Auto-refreshed episodes for '${podcast.title}' (>1hr since last refresh)"
+                    } else {
+                        "Refreshed ${mergedEpisodes.size} newest episodes for '${podcast.title}'"
+                    }
+                    _sponsorSkipEvent.value = statusMsg
+                    repository.addSyncLog("Feed Refresh Engine", statusMsg)
+                    Log.i("PodcastPlayer", "[SYSTEM CONSOLE] $statusMsg")
+                    System.out.println("[PodcastPlayerConsole] $statusMsg")
+                }
+            } catch (e: Exception) {
+                Log.e("PodcastPlayer", "[SYSTEM CONSOLE] Failed to refresh podcast episodes: ${e.message}", e)
+            } finally {
+                _isRefreshingEpisodes.value = false
+            }
+        }
     }
 
     // Media Player control
@@ -717,10 +797,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // Internal simulation loop
+    // Internal playback loop with system console diagnostics
     private fun startPlaybackJob() {
         playbackJob?.cancel()
         playbackJob = viewModelScope.launch {
+            var loopTickCount = 0
             while (_isPlaying.value) {
                 delay(250) // Update position every 250ms for smooth UI progress
                 val current = _currentPlayingEpisode.value ?: break
@@ -739,6 +820,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 } else {
                     _playbackPositionMs.value = newPosition
                     checkSponsorAndAdDetection(newPosition)
+
+                    // Emit live telemetry to system console / logcat every 3 seconds (12 * 250ms)
+                    if (++loopTickCount % 12 == 0) {
+                        val posSec = newPosition / 1000
+                        val durSec = current.durationSeconds
+                        val energy = (_currentAudioEnergy.value * 100).toInt()
+                        val consoleLine = "[PLAYER CONSOLE] Playing '${current.title}' | Pos: ${posSec}s / ${durSec}s (${(newPosition * 100 / durationMs)}%) | RMS: $energy% | AdActive: ${_isAdActive.value} | AutoSkip: ${_isAutoAdSkipEnabled.value}"
+                        Log.i("PodcastPlayer", consoleLine)
+                        System.out.println(consoleLine)
+                    }
                 }
             }
         }
