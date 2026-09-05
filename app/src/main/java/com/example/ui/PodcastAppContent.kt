@@ -42,6 +42,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import com.example.data.EpisodeEntity
 import com.example.data.PodcastEntity
 import com.example.data.SyncLogEntity
@@ -49,6 +53,97 @@ import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
+
+@Composable
+fun SmartPodcastImage(
+    imageUrl: String?,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    reloadKey: Any? = null
+) {
+    val context = LocalContext.current
+    var autoRetryCount by remember(imageUrl, reloadKey) { mutableIntStateOf(0) }
+    var imageStateKey by remember(imageUrl, reloadKey) { mutableIntStateOf(0) }
+
+    val imageRequest = remember(imageUrl, imageStateKey) {
+        ImageRequest.Builder(context)
+            .data(imageUrl)
+            .crossfade(true)
+            .build()
+    }
+
+    SubcomposeAsyncImage(
+        model = imageRequest,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale,
+        loading = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(DarkCharcoal),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = CyberGreen,
+                    strokeWidth = 2.dp
+                )
+            }
+        },
+        error = {
+            if (autoRetryCount < 2) {
+                LaunchedEffect(autoRetryCount) {
+                    kotlinx.coroutines.delay(800)
+                    autoRetryCount++
+                    imageStateKey++
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkCharcoal),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = AdGold,
+                        strokeWidth = 2.dp
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(DarkCharcoal)
+                        .clickable {
+                            autoRetryCount = 0
+                            imageStateKey++
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Retry image",
+                            tint = TextGray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Neu laden",
+                            color = TextGray,
+                            fontSize = 9.sp
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2525,20 +2620,28 @@ fun FullPlayerScreen(
                 }
             }
 
-            // Big Center Artwork
+            // Big Center Artwork (Swipe down on image minimizes player view)
             Box(
                 modifier = Modifier
                     .size(280.dp)
                     .clip(RoundedCornerShape(24.dp))
                     .background(DarkCharcoal)
-                    .border(1.dp, if (isAdActive) AdGold else BorderGray, RoundedCornerShape(24.dp)),
+                    .border(1.dp, if (isAdActive) AdGold else BorderGray, RoundedCornerShape(24.dp))
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures { _, dragAmount ->
+                            if (dragAmount > 20f) {
+                                onCollapse()
+                            }
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
-                AsyncImage(
-                    model = episode!!.podcastCoverUrl,
-                    contentDescription = null,
+                SmartPodcastImage(
+                    imageUrl = episode!!.podcastCoverUrl,
+                    contentDescription = episode!!.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    reloadKey = episode!!.podcastCoverUrl
                 )
             }
 
@@ -2891,16 +2994,21 @@ fun FullPlayerScreen(
                     )
                 }
 
-                // Skip backward 15s
+                // Skip backward 10s (65.dp = 10% smaller than 72.dp play/pause)
                 IconButton(
                     onClick = { viewModel.skipBackward() },
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(65.dp)
                         .background(DarkCharcoal, CircleShape)
                         .border(1.dp, BorderGray, CircleShape)
                         .testTag("skip_backward")
                 ) {
-                    Icon(Icons.Default.Replay10, contentDescription = "Rewind 15s", tint = TextWhite)
+                    Icon(
+                        Icons.Default.Replay10,
+                        contentDescription = "Rewind 10s",
+                        tint = TextWhite,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
 
                 // Play / Pause Circle
@@ -2919,16 +3027,21 @@ fun FullPlayerScreen(
                     )
                 }
 
-                // Skip forward 15s
+                // Skip forward 10s (65.dp = 10% smaller than 72.dp play/pause)
                 IconButton(
                     onClick = { viewModel.skipForward() },
                     modifier = Modifier
-                        .size(44.dp)
+                        .size(65.dp)
                         .background(DarkCharcoal, CircleShape)
                         .border(1.dp, BorderGray, CircleShape)
                         .testTag("skip_forward")
                 ) {
-                    Icon(Icons.Default.Forward10, contentDescription = "Forward 15s", tint = TextWhite)
+                    Icon(
+                        Icons.Default.Forward10,
+                        contentDescription = "Forward 10s",
+                        tint = TextWhite,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
 
                 // Next Chapter Button

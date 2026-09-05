@@ -487,15 +487,25 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             var currentEp = episode
 
-            // If episode doesn't have stored chapters, attempt extraction from description or feed
-            if (currentEp.chapters.isEmpty()) {
-                val parsed = ChapterParser.parseChapters(null, currentEp.description, currentEp.durationSeconds)
-                if (parsed.isNotEmpty()) {
-                    val pipeStr = ChapterParser.toPipeString(parsed)
-                    currentEp = currentEp.copy(chapters = pipeStr)
-                    repository.updateEpisode(currentEp)
-                }
+            // Ensure metadata (chapters, ad timestamps) & generate episode transcript every time playback starts
+            val parsedChaps = ChapterParser.parseChapters(currentEp.chapters, currentEp.description, currentEp.durationSeconds)
+            if (currentEp.chapters.isEmpty() && parsedChaps.isNotEmpty()) {
+                val pipeStr = ChapterParser.toPipeString(parsedChaps)
+                currentEp = currentEp.copy(chapters = pipeStr)
             }
+
+            if (currentEp.transcript.isEmpty()) {
+                val generatedTranscript = TranscriptParser.parseOrGenerateTranscript(
+                    rawTranscript = null,
+                    episodeTitle = currentEp.title,
+                    episodeDescription = currentEp.description,
+                    durationSeconds = currentEp.durationSeconds,
+                    chapters = parsedChaps
+                )
+                val transcriptText = generatedTranscript.joinToString("\n") { "[${it.formattedTime()}] ${it.speaker}: ${it.text}" }
+                currentEp = currentEp.copy(transcript = transcriptText)
+            }
+            repository.updateEpisode(currentEp)
 
             _currentPlayingEpisode.value = currentEp
             _playbackPositionMs.value = currentEp.playbackPositionMs
