@@ -116,7 +116,7 @@ jobs:
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: darkcast-debug-apk
+          name: labcast-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
 
@@ -171,7 +171,7 @@ jobs:
             if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "main" ]; then
               TAG_NAME="v1.2.0"
             fi
-            TARGET_NAME="darkcast-${TAG_NAME}.apk"
+            TARGET_NAME="labcast-${TAG_NAME}.apk"
             cp "$APK_FILE" "release_dist/${TARGET_NAME}"
             cd release_dist
             sha256sum "${TARGET_NAME}" > "${TARGET_NAME}.sha256"
@@ -185,7 +185,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_github_release == 'true'
         with:
           tag_name: ${{ steps.prepare_apk.outputs.tag_name || 'v1.2.0' }}
-          name: "DarkCast ${{ steps.prepare_apk.outputs.tag_name || 'v1.2.0' }}"
+          name: "LabCast ${{ steps.prepare_apk.outputs.tag_name || 'v1.2.0' }}"
           draft: false
           prerelease: false
           generate_release_notes: true

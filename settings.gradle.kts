@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "DarkCast"
+rootProject.name = "LabCast"
 
 include(":app")

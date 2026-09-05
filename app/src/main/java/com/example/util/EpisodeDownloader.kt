@@ -33,7 +33,7 @@ object EpisodeDownloader {
             if (url.startsWith("http://") || url.startsWith("https://")) {
                 val request = Request.Builder()
                     .url(url)
-                    .header("User-Agent", "DarkCast/1.0 (Android)")
+                    .header("User-Agent", "LabCast/1.0 (Android)")
                     .build()
 
                 val response = client.newCall(request).execute()

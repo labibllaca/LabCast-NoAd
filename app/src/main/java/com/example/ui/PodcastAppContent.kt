@@ -274,7 +274,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         CircularProgressIndicator(color = CyberGreen, modifier = Modifier.size(56.dp))
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Syncing across DarkCast cloud database...",
+                            text = "Syncing across LabCast cloud database...",
                             color = TextWhite,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp
@@ -344,7 +344,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                 ) {
                     Column {
                         Text(
-                            text = "DARKCAST",
+                            text = "LABCAST",
                             color = CyberGreen,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Black,
@@ -2075,6 +2075,10 @@ fun FullPlayerScreen(
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
     val isAdActive by viewModel.isAdActive.collectAsStateWithLifecycle()
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val chapters by viewModel.currentChapters.collectAsStateWithLifecycle()
+    val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
+
+    var showChaptersSheet by remember { mutableStateOf(false) }
 
     if (episode == null) return
 
@@ -2129,13 +2133,34 @@ fun FullPlayerScreen(
                     )
                 }
 
-                Text(
-                    text = "NOW SPINNING",
-                    color = TextGray,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp
-                )
+                // Chapters button in header
+                Surface(
+                    onClick = { showChaptersSheet = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.15f) else DarkCharcoal,
+                    border = BorderStroke(1.dp, if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.6f) else BorderGray),
+                    modifier = Modifier.testTag("player_chapters_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.FormatListBulleted,
+                            contentDescription = "Chapters",
+                            tint = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (chapters.isNotEmpty()) "Chapters (${chapters.size})" else "Chapters",
+                            color = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
 
                 IconButton(
                     onClick = { viewModel.toggleFavorite(episode!!) },
@@ -2165,23 +2190,9 @@ fun FullPlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-
-                // Spinning overlay visual effect when playing
-                if (isPlaying) {
-                    val infiniteTransition = rememberInfiniteTransition()
-                    val rotation by infiniteTransition.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 360f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(12000, easing = LinearEasing),
-                            repeatMode = RepeatMode.Restart
-                        )
-                    )
-                    // Optional spinning decorative overlay for cyber aesthetic
-                }
             }
 
-            // Titles
+            // Titles & Active Chapter Badge
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
@@ -2202,6 +2213,38 @@ fun FullPlayerScreen(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
+
+                if (activeChapter != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        onClick = { showChaptersSheet = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = DarkCharcoal,
+                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.4f)),
+                        modifier = Modifier.testTag("active_chapter_chip")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Bookmarks,
+                                contentDescription = null,
+                                tint = CyberGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${activeChapter!!.formattedStartTime()} • ${activeChapter!!.title}",
+                                color = TextWhite,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
 
             // Ad Skipper Console
@@ -2234,7 +2277,7 @@ fun FullPlayerScreen(
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "DarkCast Smart Skipper blocks tracking ads and sponsor interruptions instantly.",
+                                text = "LabCast Smart Skipper blocks tracking ads and sponsor interruptions instantly.",
                                 color = TextWhite,
                                 fontSize = 11.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -2254,7 +2297,7 @@ fun FullPlayerScreen(
                         }
                     }
                 } else {
-                    // Standard Ad Block Info (Empty placeholder / Stats banner)
+                    // Standard Ad Block Info
                     Card(
                         colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
                         modifier = Modifier
@@ -2275,7 +2318,7 @@ fun FullPlayerScreen(
 
                             // Quick trigger button to simulate/jump to ad for reviewer testability
                             Button(
-                                onClick = { viewModel.seekTo(44000L) }, // Jumps to 44 seconds, right before the 45s ad boundary!
+                                onClick = { viewModel.seekTo(44000L) },
                                 colors = ButtonDefaults.buttonColors(containerColor = BorderGray, contentColor = CyberGreen),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                 shape = RoundedCornerShape(6.dp),
@@ -2366,25 +2409,292 @@ fun FullPlayerScreen(
                 }
             }
 
-            // Extra Info (Sandbox file offline state indicator)
+            // Extra Info & Chapters Quick Action
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    if (episode!!.isDownloaded) Icons.Default.OfflinePin else Icons.Default.CloudQueue,
-                    contentDescription = null,
-                    tint = if (episode!!.isDownloaded) CyberGreenGlow else TextGray,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (episode!!.isDownloaded) "Playing offline from sandbox memory" else "Streaming from cloud server",
-                    color = TextGray,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (episode!!.isDownloaded) Icons.Default.OfflinePin else Icons.Default.CloudQueue,
+                        contentDescription = null,
+                        tint = if (episode!!.isDownloaded) CyberGreenGlow else TextGray,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (episode!!.isDownloaded) "Offline Memory" else "Cloud Stream",
+                        color = TextGray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                TextButton(
+                    onClick = { showChaptersSheet = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    modifier = Modifier.height(28.dp).testTag("quick_open_chapters")
+                ) {
+                    Icon(
+                        Icons.Default.Bookmarks,
+                        contentDescription = null,
+                        tint = CyberGreen,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (chapters.isNotEmpty()) "View Chapters (${chapters.size})" else "Chapters",
+                        color = CyberGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Chapters Modal Bottom Sheet
+        if (showChaptersSheet) {
+            ChaptersBottomSheet(
+                chapters = chapters,
+                activeChapter = activeChapter,
+                episodeTitle = episode!!.title,
+                onChapterSelected = { ch ->
+                    viewModel.seekToChapter(ch)
+                    showChaptersSheet = false
+                },
+                onDismiss = { showChaptersSheet = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChaptersBottomSheet(
+    chapters: List<com.example.data.PodcastChapter>,
+    activeChapter: com.example.data.PodcastChapter?,
+    episodeTitle: String,
+    onChapterSelected: (com.example.data.PodcastChapter) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ObsidianBlack,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = BorderGray)
+        },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag("chapters_bottom_sheet")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.FormatListBulleted,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "EPISODE CHAPTERS",
+                            color = TextWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = CyberGreen.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = "${chapters.size}",
+                                color = CyberGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = episodeTitle,
+                        color = TextGray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("close_chapters_sheet")
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextGray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (chapters.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.Bookmarks,
+                            contentDescription = null,
+                            tint = TextGray,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "No Chapters Available",
+                            color = TextWhite,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "This episode does not contain embedded chapter timestamps or structured section notes.",
+                            color = TextGray,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) {
+                    items(chapters) { chapter ->
+                        val isActive = activeChapter?.id == chapter.id || (activeChapter == null && chapter == chapters.firstOrNull())
+
+                        Card(
+                            onClick = { onChapterSelected(chapter) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isActive) DarkCharcoal else DarkCharcoal.copy(alpha = 0.6f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = if (isActive) 1.5.dp else 1.dp,
+                                    color = if (isActive) CyberGreen else BorderGray,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .testTag("chapter_item_${chapter.id}")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Index or Active Play Indicator
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isActive) CyberGreen else DarkCharcoal)
+                                        .border(1.dp, if (isActive) CyberGreenGlow else BorderGray, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isActive) {
+                                        Icon(
+                                            Icons.Default.PlayArrow,
+                                            contentDescription = "Playing",
+                                            tint = ObsidianBlack,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Text(
+                                            text = chapter.formattedStartTime(),
+                                            color = TextGray,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = chapter.title,
+                                        color = if (isActive) CyberGreen else TextWhite,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isActive) FontWeight.Black else FontWeight.SemiBold,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "Starts at ${chapter.formattedStartTime()}",
+                                            color = TextGray,
+                                            fontSize = 11.sp
+                                        )
+                                        if (chapter.durationSeconds != null && chapter.durationSeconds > 0) {
+                                            Text(
+                                                text = " • ${chapter.formattedDuration()}",
+                                                color = CyberGreenGlow,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (isActive) {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = CyberGreen.copy(alpha = 0.2f),
+                                        border = BorderStroke(1.dp, CyberGreen)
+                                    ) {
+                                        Text(
+                                            text = "ACTIVE",
+                                            color = CyberGreen,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

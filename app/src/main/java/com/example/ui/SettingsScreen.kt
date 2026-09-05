@@ -242,9 +242,9 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             Icon(Icons.Default.Code, contentDescription = null, tint = colors.textMuted)
                         },
                         trailingIcon = {
-                            if (repoInput != "darkcast-audio/darkcast-android") {
+                            if (repoInput != "labibllaca/LabCast-NoAd") {
                                 IconButton(onClick = {
-                                    repoInput = "darkcast-audio/darkcast-android"
+                                    repoInput = "labibllaca/LabCast-NoAd"
                                     viewModel.setGitHubRepo(repoInput)
                                 }) {
                                     Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = CyberGreen)

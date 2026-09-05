@@ -107,7 +107,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "45,360,780" // Ads at 45s, 6 min, 13 min
+                adTimestampsSeconds = "45,360,780", // Ads at 45s, 6 min, 13 min
+                chapters = "0:Opening & Introduction|120:Autonomous vs Reactive Systems|420:Cognitive Architecture & Tool Calling|840:The Future of Software Engineers|1100:Wrap-up & Key Takeaways"
             ),
             EpisodeEntity(
                 id = "ep_1_2",
@@ -122,7 +123,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 isDownloaded = false,
                 downloadLocalPath = null,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "120,540"
+                adTimestampsSeconds = "120,540",
+                chapters = "0:Introduction & The Turing Test|180:Generative Models & Latent Space|480:Human Intuition vs Statistical Synthesis|720:The Copyright Frontier|840:Closing Thoughts"
             ),
             EpisodeEntity(
                 id = "ep_2_1",
@@ -136,7 +138,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "30,900"
+                adTimestampsSeconds = "30,900",
+                chapters = "0:Mission Launch & Overview|240:Subsurface Ice Thickness|600:Hydrothermal Vents & Astrobiology|1200:Radiation Hazards at Jupiter|1650:Summary & Timeline"
             ),
             EpisodeEntity(
                 id = "ep_2_2",
@@ -150,7 +153,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "15,600"
+                adTimestampsSeconds = "15,600",
+                chapters = "0:The Missing Mass Problem|180:WIMPs & Axions Explained|600:Gran Sasso Deep Underground Lab|1100:Alternative Theories: MOND|1380:Final Conclusions"
             ),
             EpisodeEntity(
                 id = "ep_3_1",
@@ -165,7 +169,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 isDownloaded = false,
                 downloadLocalPath = null,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "15" // Quick ad near the start to demonstrate Skipper
+                adTimestampsSeconds = "15", // Quick ad near the start to demonstrate Skipper
+                chapters = "0:Introduction & Breath Pacing|90:Box Breathing (4-4-4-4)|240:Progressive Muscle Relaxation|450:Deep Sleep Drift"
             ),
             EpisodeEntity(
                 id = "ep_4_1",
@@ -179,12 +184,13 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3",
                 isDownloaded = false,
                 playbackPositionMs = 0,
-                adTimestampsSeconds = "600,1200"
+                adTimestampsSeconds = "600,1200",
+                chapters = "0:The Declassified Intercept|300:The Pacific Array|600:Cold War Encryption Protocols|1200:Naval Response & Countermeasures|1900:Legacy and Modern Espionage"
             )
         )
 
         podcastDao.insertPodcasts(samplePodcasts)
         podcastDao.insertEpisodes(sampleEpisodes)
-        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Database initialized with premium DarkCast audio content"))
+        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Database initialized with premium LabCast audio content"))
     }
 }

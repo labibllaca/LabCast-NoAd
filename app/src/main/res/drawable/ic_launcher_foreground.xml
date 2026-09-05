@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/darkcast_icon_fg_1788627097122"
+        android:drawable="@drawable/labcast_icon_fg"
         android:gravity="center" />
 </layer-list>

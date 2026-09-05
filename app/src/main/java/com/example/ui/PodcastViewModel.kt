@@ -45,6 +45,30 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
 
+    // Podcast Chapters State
+    val currentChapters: StateFlow<List<PodcastChapter>> = _currentPlayingEpisode
+        .map { ep ->
+            if (ep != null) {
+                ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds)
+            } else {
+                emptyList()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val currentActiveChapter: StateFlow<PodcastChapter?> = combine(
+        currentChapters,
+        _playbackPositionMs
+    ) { chaps, posMs ->
+        if (chaps.isEmpty()) return@combine null
+        val currentSec = posMs / 1000
+        chaps.lastOrNull { it.startTimeSeconds <= currentSec } ?: chaps.firstOrNull()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun seekToChapter(chapter: PodcastChapter) {
+        seekTo(chapter.startTimeSeconds * 1000L)
+    }
+
     // Ad Skipper states
     private val _isAdActive = MutableStateFlow(false)
     val isAdActive: StateFlow<Boolean> = _isAdActive.asStateFlow()
@@ -138,7 +162,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _latestRelease = MutableStateFlow<GitHubReleaseInfo?>(null)
     val latestRelease: StateFlow<GitHubReleaseInfo?> = _latestRelease.asStateFlow()
 
-    private val _gitHubRepo = MutableStateFlow("darkcast-audio/darkcast-android")
+    private val _gitHubRepo = MutableStateFlow("labibllaca/LabCast-NoAd")
     val gitHubRepo: StateFlow<String> = _gitHubRepo.asStateFlow()
 
     private val _autoCheckUpdates = MutableStateFlow(true)
@@ -395,7 +419,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     publishDate = ep.publishDate,
                     audioUrl = ep.audioUrl,
                     isDownloaded = false,
-                    adTimestampsSeconds = ep.adTimestampsSeconds
+                    adTimestampsSeconds = ep.adTimestampsSeconds,
+                    chapters = ep.chapters
                 )
             }
 
@@ -750,7 +775,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val connection = (url.openConnection() as java.net.HttpURLConnection).apply {
                     connectTimeout = 6000
                     readTimeout = 6000
-                    setRequestProperty("User-Agent", "DarkCast-Android")
+                    setRequestProperty("User-Agent", "LabCast-Android")
                     setRequestProperty("Accept", "application/vnd.github.v3+json")
                 }
 
@@ -776,7 +801,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             if (fetchedRelease == null) {
                 fetchedRelease = GitHubReleaseInfo(
                     tagName = "v1.2.0-stable",
-                    title = "DarkCast v1.2.0: Clean Light Mode & GitHub OTA Updates",
+                    title = "LabCast v1.2.0: Clean Light Mode & GitHub OTA Updates",
                     changelog = """
                         • Neue Benutzeroberfläche: Heller Modus mit dynamischer Farbpalette
                         • Automatisches App-Update direkt über GitHub Releases
@@ -786,8 +811,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     """.trimIndent(),
                     publishedDate = "2026-09-05",
                     htmlUrl = "https://github.com/$repo/releases/tag/v1.2.0-stable",
-                    downloadUrl = "https://github.com/$repo/releases/download/v1.2.0-stable/darkcast-v1.2.0-release.apk",
-                    assetName = "darkcast-v1.2.0-release.apk",
+                    downloadUrl = "https://github.com/$repo/releases/download/v1.2.0-stable/labcast-v1.2.0-release.apk",
+                    assetName = "labcast-v1.2.0-release.apk",
                     assetSizeBytes = 28_400_000L,
                     isPrerelease = isPre
                 )
@@ -807,7 +832,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val isPrerelease = obj.optBoolean("prerelease", false)
 
         var downloadUrl = htmlUrl
-        var assetName = "darkcast-$tagName.apk"
+        var assetName = "labcast-$tagName.apk"
         var assetSize = 25_000_000L
 
         val assets = obj.optJSONArray("assets")

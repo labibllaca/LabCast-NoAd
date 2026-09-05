@@ -27,7 +27,8 @@ data class FeedEpisode(
     val durationSeconds: Long,
     val publishDate: String,
     val audioUrl: String,
-    val adTimestampsSeconds: String = ""
+    val adTimestampsSeconds: String = "",
+    val chapters: String = ""
 )
 
 enum class PodcastSource(val displayName: String, val badgeColorHex: Long) {
@@ -63,7 +64,7 @@ object PodcastApiClient {
             val url = "https://itunes.apple.com/search?term=$encoded&entity=podcast&limit=25"
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "DarkCast/1.0 (Android)")
+                .header("User-Agent", "LabCast/1.0 (Android)")
                 .build()
 
             val response = client.newCall(request).execute()
@@ -135,7 +136,7 @@ object PodcastApiClient {
             try {
                 val request = Request.Builder()
                     .url(feedUrl)
-                    .header("User-Agent", "DarkCast/1.0 (Android)")
+                    .header("User-Agent", "LabCast/1.0 (Android)")
                     .build()
 
                 val response = client.newCall(request).execute()
@@ -369,7 +370,12 @@ object CuratedPodcastCatalog {
                 durationSeconds = duration,
                 publishDate = "2026-09-0${(7 - i).coerceAtLeast(1)}",
                 audioUrl = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-${((i - 1) % 6) + 1}.mp3",
-                adTimestampsSeconds = "30,${duration / 2}"
+                adTimestampsSeconds = "30,${duration / 2}",
+                chapters = when (i % 3) {
+                    1 -> "0:Introduction & Cold Open|150:Guest Background|420:Key Innovations & Technical Metrics|${duration - 300}:Listener Q&A|${duration - 60}:Episode Wrap-up"
+                    2 -> "0:Weekly Debrief|180:Deep-Dive Technical Analysis|540:Enterprise Deployment Case Study|${duration - 240}:Future Outlook|${duration - 60}:Closing Credits"
+                    else -> "0:Prologue|120:Part 1: Foundational Paradigms|480:Part 2: Real-World Applications|${duration - 360}:Interactive Roundtable|${duration - 90}:Conclusion"
+                }
             )
         }
     }
