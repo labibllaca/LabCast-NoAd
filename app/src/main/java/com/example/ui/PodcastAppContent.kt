@@ -39,6 +39,8 @@ import coil.compose.AsyncImage
 import com.example.data.EpisodeEntity
 import com.example.data.PodcastEntity
 import com.example.data.SyncLogEntity
+import com.example.network.PodcastSource
+import com.example.network.SearchResultPodcast
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 
@@ -310,6 +312,12 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
     val isOfflineModeOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
 
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val selectedSearchSource by viewModel.selectedSearchSource.collectAsStateWithLifecycle()
+    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val searchError by viewModel.searchError.collectAsStateWithLifecycle()
+
     var selectedCategory by remember { mutableStateOf("All") }
     val categories = listOf("All", "Technology", "Science", "Wellness", "Mystery")
 
@@ -394,6 +402,225 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                                 modifier = Modifier.size(18.dp)
                             )
                         }
+                    }
+                }
+            }
+
+            // Multi-Source Universal Podcast Search Bar
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(colors.cardBackground, RoundedCornerShape(14.dp))
+                        .border(1.dp, colors.itemBorder, RoundedCornerShape(14.dp))
+                        .padding(12.dp)
+                ) {
+                    // Search Input Box
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.inputBg, RoundedCornerShape(10.dp))
+                            .border(1.dp, colors.itemBorder, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = CyberGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.updateSearchQuery(it) },
+                            placeholder = {
+                                Text(
+                                    "Search Apple Podcasts, Spotify, BBC, NPR...",
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = colors.textPrimary,
+                                unfocusedTextColor = colors.textPrimary
+                            ),
+                            singleLine = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("input_podcast_search")
+                        )
+
+                        if (isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = CyberGreen,
+                                strokeWidth = 2.dp
+                            )
+                        } else if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { viewModel.clearSearch() },
+                                modifier = Modifier.size(24.dp).testTag("btn_clear_search")
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = colors.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Search Action Button
+                        Button(
+                            onClick = { viewModel.performSearch() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyberGreen,
+                                contentColor = ObsidianBlack
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .padding(start = 4.dp)
+                                .testTag("btn_perform_search")
+                        ) {
+                            Text("Search", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Source Selection Filter Chips
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Source:",
+                            color = colors.textMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(end = 6.dp)
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            items(PodcastSource.values()) { source ->
+                                val isSelected = selectedSearchSource == source
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            if (isSelected) CyberGreen.copy(alpha = 0.2f) else colors.inputBg,
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) CyberGreen else colors.itemBorder,
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable { viewModel.selectSearchSource(source) }
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        .testTag("chip_source_${source.name.lowercase()}")
+                                ) {
+                                    Text(
+                                        text = source.displayName,
+                                        color = if (isSelected) CyberGreen else colors.textMuted,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Search Results Section (Rendered when query is present)
+            if (searchQuery.isNotBlank() || searchResults.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Search Results (${searchResults.size})",
+                            color = colors.textPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Source: ${selectedSearchSource.displayName}",
+                            color = CyberGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                if (isSearching) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, colors.itemBorder, RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                CircularProgressIndicator(color = CyberGreen, modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "Querying ${selectedSearchSource.displayName} directory...",
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                } else if (searchResults.isEmpty()) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                            modifier = Modifier.fillMaxWidth().border(1.dp, colors.itemBorder, RoundedCornerShape(12.dp)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(Icons.Default.SearchOff, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(32.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    searchError ?: "No podcasts found for '$searchQuery' on ${selectedSearchSource.displayName}",
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(searchResults) { result ->
+                        val isLocallySubscribed = podcasts.any { it.id == result.id && it.isSubscribed }
+                        SearchResultCard(
+                            result = result,
+                            isSubscribed = isLocallySubscribed,
+                            onSubscribeClick = { viewModel.subscribeToSearchResult(result) },
+                            onCardClick = { viewModel.subscribeToSearchResult(result) }
+                        )
                     }
                 }
             }
@@ -715,8 +942,13 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
 // ==========================================
 @Composable
 fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onBack: () -> Unit) {
+    val colors = LocalCustomColors.current
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val isOfflineModeOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
+    val isMultiSelectMode by viewModel.isMultiSelectMode.collectAsStateWithLifecycle()
+    val selectedEpisodeIds by viewModel.selectedEpisodeIds.collectAsStateWithLifecycle()
+    val isBatchDownloading by viewModel.isBatchDownloading.collectAsStateWithLifecycle()
+
     val podcastEpisodes = episodes.filter { it.podcastId == podcast.id }
 
     val filteredEpisodes = if (isOfflineModeOnly) {
@@ -724,6 +956,8 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
     } else {
         podcastEpisodes
     }
+
+    val nonDownloadedEpisodes = filteredEpisodes.filter { !it.isDownloaded }
 
     LazyColumn(
         modifier = Modifier
@@ -827,14 +1061,120 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
         }
 
-        // Episode List Header
+        // Episode List Header with Multi-Select Actions
         item {
-            Text(
-                text = "Episodes (${filteredEpisodes.size})",
-                color = TextWhite,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Episodes (${filteredEpisodes.size})",
+                        color = colors.textPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // Multi-download toggle button
+                    if (nonDownloadedEpisodes.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = { viewModel.toggleMultiSelectMode() },
+                                modifier = Modifier.testTag("btn_toggle_multi_select")
+                            ) {
+                                Icon(
+                                    if (isMultiSelectMode) Icons.Default.Close else Icons.Default.Checklist,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isMultiSelectMode) "Cancel" else "Multi-Download",
+                                    color = CyberGreen,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Multi-Download action toolbar if multi-select mode is active
+                AnimatedVisibility(visible = isMultiSelectMode) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .border(1.dp, CyberGreen.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${selectedEpisodeIds.size} selected",
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(
+                                        onClick = { viewModel.selectAllEpisodes(nonDownloadedEpisodes) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Select All", color = colors.textMuted, fontSize = 11.sp)
+                                    }
+                                    TextButton(
+                                        onClick = { viewModel.deselectAllEpisodes() },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("Deselect", color = colors.textMuted, fontSize = 11.sp)
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Button(
+                                onClick = { viewModel.downloadSelectedEpisodes(filteredEpisodes) },
+                                enabled = selectedEpisodeIds.isNotEmpty() && !isBatchDownloading,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = CyberGreen,
+                                    contentColor = ObsidianBlack,
+                                    disabledContainerColor = colors.itemBorder,
+                                    disabledContentColor = colors.textMuted
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(38.dp)
+                                    .testTag("btn_download_selected_episodes")
+                            ) {
+                                if (isBatchDownloading) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = ObsidianBlack, strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Batch Downloading...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        "Download Selected (${selectedEpisodeIds.size})",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if (filteredEpisodes.isEmpty()) {
@@ -862,9 +1202,13 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
             }
         } else {
             items(filteredEpisodes) { episode ->
+                val isSelected = selectedEpisodeIds.contains(episode.id)
                 EpisodeListItem(
                     episode = episode,
                     viewModel = viewModel,
+                    isMultiSelectMode = isMultiSelectMode,
+                    isSelected = isSelected,
+                    onToggleSelect = { viewModel.toggleEpisodeSelection(episode.id) },
                     onPlayClick = { viewModel.playEpisode(episode) }
                 )
             }
@@ -1266,17 +1610,32 @@ fun SyncLogItem(log: SyncLogEntity) {
 fun EpisodeListItem(
     episode: EpisodeEntity,
     viewModel: PodcastViewModel,
+    isMultiSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
     onPlayClick: () -> Unit
 ) {
+    val colors = LocalCustomColors.current
     val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
     val isDownloading = downloadProgressMap.containsKey(episode.id)
     val downloadProgress = downloadProgressMap[episode.id] ?: 0f
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) CyberGreen.copy(alpha = 0.08f) else colors.cardBackground
+        ),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, BorderGray, RoundedCornerShape(12.dp))
+            .border(
+                1.dp,
+                if (isSelected) CyberGreen else colors.itemBorder,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable {
+                if (isMultiSelectMode && onToggleSelect != null) {
+                    onToggleSelect()
+                }
+            }
             .testTag("episode_item_${episode.id}"),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -1285,12 +1644,28 @@ fun EpisodeListItem(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top
             ) {
+                // Multi-Select Checkbox if in multi-select mode
+                if (isMultiSelectMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect?.invoke() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = CyberGreen,
+                            checkmarkColor = ObsidianBlack,
+                            uncheckedColor = colors.textMuted
+                        ),
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .testTag("checkbox_episode_${episode.id}")
+                    )
+                }
+
                 // Cover art or decorative background
                 Box(
                     modifier = Modifier
                         .size(52.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(BorderGray)
+                        .background(colors.itemBorder)
                 ) {
                     AsyncImage(
                         model = episode.podcastCoverUrl,
@@ -1305,7 +1680,7 @@ fun EpisodeListItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = episode.title,
-                        color = TextWhite,
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                         maxLines = 2,
@@ -1314,7 +1689,7 @@ fun EpisodeListItem(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${episode.podcastTitle} • ${episode.publishDate}",
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -1324,14 +1699,14 @@ fun EpisodeListItem(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = episode.description,
-                color = TextGray,
+                color = colors.textMuted,
                 fontSize = 11.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 15.sp
             )
 
-            // Micro progress bar if user has listend partially
+            // Micro progress bar if user has listened partially
             if (episode.playbackPositionMs > 0 && !episode.isCompleted) {
                 val progressFraction = episode.playbackPositionMs.toFloat() / (episode.durationSeconds * 1000f)
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1339,7 +1714,7 @@ fun EpisodeListItem(
                     progress = { progressFraction.coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth().height(2.dp),
                     color = CyberGreen,
-                    trackColor = BorderGray
+                    trackColor = colors.itemBorder
                 )
             }
 
@@ -1379,7 +1754,7 @@ fun EpisodeListItem(
                     // Duration text
                     Text(
                         text = viewModel.formatDuration(episode.durationSeconds),
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(end = 12.dp)
@@ -1393,7 +1768,7 @@ fun EpisodeListItem(
                         Icon(
                             if (episode.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                             contentDescription = "Favorite",
-                            tint = if (episode.isFavorite) ErrorRed else TextGray,
+                            tint = if (episode.isFavorite) ErrorRed else colors.textMuted,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -1428,12 +1803,133 @@ fun EpisodeListItem(
                             Icon(
                                 Icons.Default.CloudDownload,
                                 contentDescription = "Download Offline",
-                                tint = TextGray,
+                                tint = colors.textMuted,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+// ==========================================
+// SEARCH RESULT CARD (EXTERNAL DIRECTORIES)
+// ==========================================
+@Composable
+fun SearchResultCard(
+    result: SearchResultPodcast,
+    isSubscribed: Boolean,
+    onSubscribeClick: () -> Unit,
+    onCardClick: () -> Unit
+) {
+    val colors = LocalCustomColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.itemBorder, RoundedCornerShape(12.dp))
+            .clickable { onCardClick() }
+            .testTag("search_result_${result.id}"),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.itemBorder)
+            ) {
+                AsyncImage(
+                    model = result.coverUrl,
+                    contentDescription = result.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(CyberGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = result.source.displayName,
+                            color = CyberGreen,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = result.category,
+                        color = colors.textMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = result.title,
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "by ${result.author}",
+                    color = colors.textMuted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (result.trackCount > 0) {
+                    Text(
+                        text = "${result.trackCount} episodes",
+                        color = colors.textMuted,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Button(
+                onClick = { onSubscribeClick() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSubscribed) colors.itemBorder else CyberGreen,
+                    contentColor = if (isSubscribed) colors.textPrimary else ObsidianBlack
+                ),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag("subscribe_result_${result.id}")
+            ) {
+                Icon(
+                    if (isSubscribed) Icons.Default.Check else Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (isSubscribed) "Subscribed" else "Subscribe",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

@@ -38,6 +38,14 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.updatePodcast(podcast)
     }
 
+    suspend fun insertPodcast(podcast: PodcastEntity) {
+        podcastDao.insertPodcasts(listOf(podcast))
+    }
+
+    suspend fun insertEpisodes(episodes: List<EpisodeEntity>) {
+        podcastDao.insertEpisodes(episodes)
+    }
+
     suspend fun addSyncLog(deviceName: String, action: String) {
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = deviceName, action = action))
     }

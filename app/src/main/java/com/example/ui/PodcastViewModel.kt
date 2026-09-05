@@ -4,10 +4,15 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import com.example.network.PodcastApiClient
+import com.example.network.PodcastSource
+import com.example.network.SearchResultPodcast
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PodcastViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -68,6 +73,33 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedPodcast = MutableStateFlow<PodcastEntity?>(null)
     val selectedPodcast: StateFlow<PodcastEntity?> = _selectedPodcast.asStateFlow()
+
+    // Multi-Source Podcast Search States
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _selectedSearchSource = MutableStateFlow(PodcastSource.ALL)
+    val selectedSearchSource: StateFlow<PodcastSource> = _selectedSearchSource.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<SearchResultPodcast>>(emptyList())
+    val searchResults: StateFlow<List<SearchResultPodcast>> = _searchResults.asStateFlow()
+
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+
+    // Multi-Selection for Episodes Download
+    private val _isMultiSelectMode = MutableStateFlow(false)
+    val isMultiSelectMode: StateFlow<Boolean> = _isMultiSelectMode.asStateFlow()
+
+    private val _selectedEpisodeIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedEpisodeIds: StateFlow<Set<String>> = _selectedEpisodeIds.asStateFlow()
+
+    // Batch downloading indicator
+    private val _isBatchDownloading = MutableStateFlow(false)
+    val isBatchDownloading: StateFlow<Boolean> = _isBatchDownloading.asStateFlow()
 
     // Simulated downloads map: EpisodeId -> Progress (0.0 to 1.0)
     private val _downloadProgressMap = MutableStateFlow<Map<String, Float>>(emptyMap())
@@ -263,6 +295,169 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun skipAdManually() {
         if (!_isAdActive.value) return
         performAdSkip()
+    }
+
+    // Multi-Source Search Methods
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+        if (query.trim().isEmpty()) {
+            _searchResults.value = emptyList()
+            _searchError.value = null
+        }
+    }
+
+    fun selectSearchSource(source: PodcastSource) {
+        _selectedSearchSource.value = source
+        if (_searchQuery.value.isNotBlank()) {
+            performSearch(_searchQuery.value, source)
+        }
+    }
+
+    fun performSearch(query: String = _searchQuery.value, source: PodcastSource = _selectedSearchSource.value) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+
+        viewModelScope.launch {
+            _isSearching.value = true
+            _searchError.value = null
+            try {
+                val results = withContext(Dispatchers.IO) {
+                    PodcastApiClient.searchPodcasts(q, source)
+                }
+                _searchResults.value = results
+                if (results.isEmpty()) {
+                    _searchError.value = "No podcasts found on ${source.displayName} for '$q'."
+                }
+            } catch (e: Exception) {
+                _searchError.value = "Search error: ${e.message}"
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _searchError.value = null
+    }
+
+    // Subscribe to a Podcast from Search (or toggle)
+    fun subscribeToSearchResult(result: SearchResultPodcast) {
+        viewModelScope.launch {
+            val existing = repository.getPodcastById(result.id)
+            if (existing != null) {
+                toggleSubscribe(existing)
+                return@launch
+            }
+
+            // Create new PodcastEntity and save to Room
+            val newPodcast = PodcastEntity(
+                id = result.id,
+                title = result.title,
+                author = result.author,
+                description = result.description,
+                coverUrl = result.coverUrl,
+                category = result.category,
+                isSubscribed = true
+            )
+            repository.insertPodcast(newPodcast)
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Subscribed to '${result.title}' via ${result.source.displayName}")
+
+            // Fetch and save episodes for this show
+            val feedEpisodes = withContext(Dispatchers.IO) {
+                PodcastApiClient.fetchEpisodesForFeed(result.feedUrl, result.title)
+            }
+
+            val episodeEntities = feedEpisodes.map { ep ->
+                EpisodeEntity(
+                    id = ep.id,
+                    podcastId = result.id,
+                    podcastTitle = result.title,
+                    podcastCoverUrl = result.coverUrl,
+                    title = ep.title,
+                    description = ep.description,
+                    durationSeconds = ep.durationSeconds,
+                    publishDate = ep.publishDate,
+                    audioUrl = ep.audioUrl,
+                    isDownloaded = false,
+                    adTimestampsSeconds = ep.adTimestampsSeconds
+                )
+            }
+
+            if (episodeEntities.isNotEmpty()) {
+                repository.insertEpisodes(episodeEntities)
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Synced ${episodeEntities.size} episodes for '${result.title}'")
+            }
+
+            // Also open this podcast in detail view
+            _selectedPodcast.value = newPodcast
+        }
+    }
+
+    // Multi-Selection Episode Download Methods
+    fun toggleMultiSelectMode(enable: Boolean? = null) {
+        val next = enable ?: !_isMultiSelectMode.value
+        _isMultiSelectMode.value = next
+        if (!next) {
+            _selectedEpisodeIds.value = emptySet()
+        }
+    }
+
+    fun toggleEpisodeSelection(episodeId: String) {
+        val current = _selectedEpisodeIds.value.toMutableSet()
+        if (current.contains(episodeId)) {
+            current.remove(episodeId)
+        } else {
+            current.add(episodeId)
+        }
+        _selectedEpisodeIds.value = current
+    }
+
+    fun selectAllEpisodes(episodesToSelect: List<EpisodeEntity>) {
+        _selectedEpisodeIds.value = episodesToSelect.map { it.id }.toSet()
+    }
+
+    fun deselectAllEpisodes() {
+        _selectedEpisodeIds.value = emptySet()
+    }
+
+    fun downloadSelectedEpisodes(availableEpisodes: List<EpisodeEntity>) {
+        val selectedIds = _selectedEpisodeIds.value
+        if (selectedIds.isEmpty()) return
+
+        val episodesToDownload = availableEpisodes.filter { selectedIds.contains(it.id) && !it.isDownloaded }
+        if (episodesToDownload.isEmpty()) {
+            _isMultiSelectMode.value = false
+            _selectedEpisodeIds.value = emptySet()
+            return
+        }
+
+        viewModelScope.launch {
+            _isBatchDownloading.value = true
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Queued ${episodesToDownload.size} episodes for batch offline download")
+
+            for (episode in episodesToDownload) {
+                // Download each episode
+                for (progress in 1..8) {
+                    val fraction = progress / 8.0f
+                    _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to fraction)
+                    delay(120)
+                }
+
+                val updated = episode.copy(
+                    isDownloaded = true,
+                    downloadLocalPath = "/local/podcasts/${episode.id}.mp3"
+                )
+                repository.updateEpisode(updated)
+                _downloadProgressMap.value = _downloadProgressMap.value - episode.id
+            }
+
+            _isBatchDownloading.value = false
+            _isMultiSelectMode.value = false
+            _selectedEpisodeIds.value = emptySet()
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Batch download finished: ${episodesToDownload.size} episodes ready offline.")
+        }
     }
 
     // Download Simulation
