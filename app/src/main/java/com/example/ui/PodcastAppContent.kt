@@ -981,6 +981,13 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
 // ==========================================
 // PODCAST DETAIL SCREEN
 // ==========================================
+enum class EpisodeSortOrder(val displayName: String) {
+    NEWEST("Newest First"),
+    OLDEST("Oldest First"),
+    DURATION_DESC("Longest First"),
+    DURATION_ASC("Shortest First")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onBack: () -> Unit) {
@@ -992,13 +999,26 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
     val isBatchDownloading by viewModel.isBatchDownloading.collectAsStateWithLifecycle()
     val isRefreshingEpisodes by viewModel.isRefreshingEpisodes.collectAsStateWithLifecycle()
 
+    var episodeSearchQuery by remember { mutableStateOf("") }
+    var sortOrder by remember { mutableStateOf(EpisodeSortOrder.NEWEST) }
+    var showSortMenu by remember { mutableStateOf(false) }
+
     val podcastEpisodes = episodes.filter { it.podcastId == podcast.id }
 
-    val filteredEpisodes = if (isOfflineModeOnly) {
-        podcastEpisodes.filter { it.isDownloaded }
-    } else {
-        podcastEpisodes
-    }
+    val filteredEpisodes = podcastEpisodes
+        .filter { ep ->
+            if (isOfflineModeOnly && !ep.isDownloaded) return@filter false
+            if (episodeSearchQuery.isBlank()) true
+            else ep.title.contains(episodeSearchQuery, ignoreCase = true) || ep.description.contains(episodeSearchQuery, ignoreCase = true)
+        }
+        .sortedWith { ep1, ep2 ->
+            when (sortOrder) {
+                EpisodeSortOrder.NEWEST -> ep2.publishDate.compareTo(ep1.publishDate)
+                EpisodeSortOrder.OLDEST -> ep1.publishDate.compareTo(ep2.publishDate)
+                EpisodeSortOrder.DURATION_DESC -> ep2.durationSeconds.compareTo(ep1.durationSeconds)
+                EpisodeSortOrder.DURATION_ASC -> ep1.durationSeconds.compareTo(ep2.durationSeconds)
+            }
+        }
 
     val nonDownloadedEpisodes = filteredEpisodes.filter { !it.isDownloaded }
 
@@ -1134,27 +1154,50 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Button(
-                        onClick = { viewModel.toggleSubscribe(podcast) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (podcast.isSubscribed) BorderGray else CyberGreen,
-                            contentColor = if (podcast.isSubscribed) TextWhite else ObsidianBlack
-                        ),
-                        shape = RoundedCornerShape(18.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp).testTag("subscribe_button_${podcast.id}")
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            if (podcast.isSubscribed) Icons.Default.Check else Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (podcast.isSubscribed) "Subscribed" else "Subscribe",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Button(
+                            onClick = { viewModel.toggleSubscribe(podcast) },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (podcast.isSubscribed) BorderGray else CyberGreen,
+                                contentColor = if (podcast.isSubscribed) TextWhite else ObsidianBlack
+                            ),
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp).testTag("subscribe_button_${podcast.id}")
+                        ) {
+                            Icon(
+                                if (podcast.isSubscribed) Icons.Default.Check else Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (podcast.isSubscribed) "Subscribed" else "Subscribe",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.removePodcast(podcast)
+                                onBack()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = ErrorRed
+                            ),
+                            border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp).testTag("btn_remove_podcast_${podcast.id}")
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Remove Podcast", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Remove", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -1170,6 +1213,96 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
             )
             Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
+        }
+
+        // Podcast-Specific Episode Search & Sort Controls
+        item {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = episodeSearchQuery,
+                        onValueChange = { episodeSearchQuery = it },
+                        placeholder = { Text("Filter episodes of '${podcast.title}'...", color = colors.textMuted, fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = CyberGreen, modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (episodeSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { episodeSearchQuery = "" }, modifier = Modifier.size(20.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = colors.cardBackground,
+                            unfocusedContainerColor = colors.cardBackground,
+                            focusedBorderColor = CyberGreen,
+                            unfocusedBorderColor = colors.itemBorder,
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("input_podcast_episode_search")
+                    )
+
+                    // Sort Dropdown Button
+                    Box {
+                        Button(
+                            onClick = { showSortMenu = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.cardBackground,
+                                contentColor = CyberGreen
+                            ),
+                            border = BorderStroke(1.dp, colors.itemBorder),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("btn_sort_episodes")
+                        ) {
+                            Icon(Icons.Default.Sort, contentDescription = "Sort", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(sortOrder.displayName, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        DropdownMenu(
+                            expanded = showSortMenu,
+                            onDismissRequest = { showSortMenu = false },
+                            modifier = Modifier.background(colors.cardBackground)
+                        ) {
+                            EpisodeSortOrder.values().forEach { order ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = order.displayName,
+                                            color = if (sortOrder == order) CyberGreen else colors.textPrimary,
+                                            fontWeight = if (sortOrder == order) FontWeight.Bold else FontWeight.Normal,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    onClick = {
+                                        sortOrder = order
+                                        showSortMenu = false
+                                    },
+                                    leadingIcon = {
+                                        if (sortOrder == order) {
+                                            Icon(Icons.Default.Check, contentDescription = null, tint = CyberGreen, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Episode List Header with Multi-Select Actions

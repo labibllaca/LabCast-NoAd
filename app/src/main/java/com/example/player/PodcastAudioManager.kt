@@ -44,12 +44,18 @@ class PodcastAudioManager(private val context: Context) {
         _isBuffering.value = true
         _isPrepared.value = false
 
+        val msg = "[SYSTEM-CONSOLE-AUDIO] PLAYING target=$urlOrPath startPos=${startPositionMs}ms"
+        Log.i("PodcastAudioManager", msg)
+        System.out.println(msg)
+
         if (isLocalFile(urlOrPath)) {
             playLocalFile(urlOrPath, startPositionMs)
         } else if (isValidHttpUrl(urlOrPath)) {
             playHttpStream(urlOrPath, startPositionMs)
         } else {
-            Log.e("PodcastAudioManager", "Invalid audio URL: $urlOrPath")
+            val errMsg = "[SYSTEM-CONSOLE-AUDIO] ERROR Invalid audio URL: $urlOrPath"
+            Log.e("PodcastAudioManager", errMsg)
+            System.err.println(errMsg)
             _isBuffering.value = false
             onErrorListener?.invoke("Invalid audio stream URL")
         }
@@ -173,6 +179,9 @@ class PodcastAudioManager(private val context: Context) {
     @Synchronized
     fun pause() {
         isPlaybackRequested = false
+        val msg = "[SYSTEM-CONSOLE-AUDIO] PAUSED at ${getCurrentPosition()}ms"
+        Log.i("PodcastAudioManager", msg)
+        System.out.println(msg)
         try {
             if (mediaPlayer?.isPlaying == true) {
                 mediaPlayer?.pause()
@@ -183,6 +192,9 @@ class PodcastAudioManager(private val context: Context) {
     @Synchronized
     fun resume() {
         isPlaybackRequested = true
+        val msg = "[SYSTEM-CONSOLE-AUDIO] RESUMED at ${getCurrentPosition()}ms"
+        Log.i("PodcastAudioManager", msg)
+        System.out.println(msg)
         try {
             if (mediaPlayer != null && _isPrepared.value) {
                 mediaPlayer?.start()
@@ -197,6 +209,9 @@ class PodcastAudioManager(private val context: Context) {
     @Synchronized
     fun seekTo(positionMs: Long) {
         requestedStartPositionMs = positionMs
+        val msg = "[SYSTEM-CONSOLE-AUDIO] SEEK TO ${positionMs}ms"
+        Log.i("PodcastAudioManager", msg)
+        System.out.println(msg)
         try {
             if (_isPrepared.value && mediaPlayer != null) {
                 mediaPlayer?.seekTo(positionMs.toInt())
@@ -209,6 +224,9 @@ class PodcastAudioManager(private val context: Context) {
         isPlaybackRequested = false
         _isBuffering.value = false
         _isPrepared.value = false
+        val msg = "[SYSTEM-CONSOLE-AUDIO] STOPPED"
+        Log.i("PodcastAudioManager", msg)
+        System.out.println(msg)
         try {
             mediaPlayer?.stop()
             mediaPlayer?.release()

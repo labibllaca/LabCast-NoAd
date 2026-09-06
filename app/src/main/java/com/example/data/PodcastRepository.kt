@@ -58,14 +58,32 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = deviceName, action = action))
     }
 
+    suspend fun removePodcast(podcast: PodcastEntity) {
+        podcastDao.deleteEpisodesForPodcast(podcast.id)
+        podcastDao.deletePodcast(podcast)
+    }
+
+    suspend fun removePodcastById(podcastId: String) {
+        podcastDao.deleteEpisodesForPodcast(podcastId)
+        podcastDao.deletePodcastById(podcastId)
+    }
+
     suspend fun clearSyncLogs() {
         podcastDao.clearSyncLogs()
     }
 
     // Population of Initial Rich Data
-    suspend fun populateInitialDataIfNeeded() {
+    suspend fun populateInitialDataIfNeeded(context: android.content.Context) {
+        val prefs = context.getSharedPreferences("podcast_app_prefs", android.content.Context.MODE_PRIVATE)
+        val isAlreadySeeded = prefs.getBoolean("initial_podcasts_seeded", false)
+
         val currentPodcasts = allPodcasts.first()
-        if (currentPodcasts.any { it.id == "pod_huberman_1545953110" }) return
+        if (isAlreadySeeded || currentPodcasts.isNotEmpty()) {
+            if (!isAlreadySeeded && currentPodcasts.isNotEmpty()) {
+                prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
+            }
+            return
+        }
 
         val defaultPodcasts = listOf(
             PodcastEntity(
@@ -259,6 +277,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
 
         // Clean up legacy dummy URLs if present
         cleanUpLegacyDummyData()
+
+        prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
 
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
     }

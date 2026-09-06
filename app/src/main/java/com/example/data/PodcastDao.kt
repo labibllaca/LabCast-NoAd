@@ -17,6 +17,15 @@ interface PodcastDao {
     @Update
     suspend fun updatePodcast(podcast: PodcastEntity)
 
+    @Delete
+    suspend fun deletePodcast(podcast: PodcastEntity)
+
+    @Query("DELETE FROM podcasts WHERE id = :podcastId")
+    suspend fun deletePodcastById(podcastId: String)
+
+    @Query("DELETE FROM episodes WHERE podcastId = :podcastId")
+    suspend fun deleteEpisodesForPodcast(podcastId: String)
+
     @Query("SELECT * FROM episodes")
     fun getAllEpisodes(): Flow<List<EpisodeEntity>>
 

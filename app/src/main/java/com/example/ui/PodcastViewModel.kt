@@ -383,7 +383,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         viewModelScope.launch {
-            repository.populateInitialDataIfNeeded()
+            repository.populateInitialDataIfNeeded(getApplication())
         }
     }
 
@@ -632,6 +632,23 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
             val status = if (updated.isSubscribed) "Subscribed to" else "Unsubscribed from"
             repository.addSyncLog("Pixel 9 Pro (This Device)", "$status '${podcast.title}'")
+        }
+    }
+
+    // Completely Remove / Delete Podcast from app
+    fun removePodcast(podcast: PodcastEntity) {
+        viewModelScope.launch {
+            if (_selectedPodcast.value?.id == podcast.id) {
+                _selectedPodcast.value = null
+            }
+            if (_currentPlayingEpisode.value?.podcastId == podcast.id) {
+                audioManager.stop()
+                _isPlaying.value = false
+                _currentPlayingEpisode.value = null
+            }
+            repository.removePodcast(podcast)
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Removed podcast '${podcast.title}' and all its episodes")
+            _sponsorSkipEvent.value = "Podcast '${podcast.title}' entfernt"
         }
     }
 
