@@ -64,7 +64,7 @@ class PodcastAudioManager(private val context: Context) {
     private fun isLocalFile(path: String): Boolean {
         return try {
             val file = File(path)
-            file.exists() && file.length() > 0
+            file.exists() && file.length() >= 5000L
         } catch (_: Exception) {
             false
         }
@@ -77,6 +77,16 @@ class PodcastAudioManager(private val context: Context) {
 
     private fun playLocalFile(path: String, startPositionMs: Long) {
         try {
+            val file = File(path)
+            if (!file.exists() || file.length() < 5000L) {
+                _isBuffering.value = false
+                _isPrepared.value = false
+                val err = "Lokale Audiodatei nicht gefunden oder beschädigt (${if (file.exists()) file.length() else 0} Bytes)"
+                Log.e("PodcastAudioManager", err)
+                onErrorListener?.invoke(err)
+                return
+            }
+
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -84,10 +94,13 @@ class PodcastAudioManager(private val context: Context) {
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
                 )
-                setDataSource(path)
+                java.io.FileInputStream(file).use { fis ->
+                    setDataSource(fis.fd, 0, file.length())
+                }
                 setOnPreparedListener { mp ->
                     _isPrepared.value = true
                     _isBuffering.value = false
+                    Log.i("PodcastAudioManager", "Local file prepared successfully (${file.length()} bytes). Duration: ${mp.duration}ms")
                     if (isPlaybackRequested) {
                         if (startPositionMs > 0 && startPositionMs < mp.duration) {
                             mp.seekTo(startPositionMs.toInt())
@@ -103,7 +116,7 @@ class PodcastAudioManager(private val context: Context) {
                     _isBuffering.value = false
                     _isPrepared.value = false
                     Log.e("PodcastAudioManager", "Local MediaPlayer error: what=$what extra=$extra")
-                    onErrorListener?.invoke("Local file playback error ($what)")
+                    onErrorListener?.invoke("Lokale Wiedergabe fehlgeschlagen (Code $what)")
                     true
                 }
                 prepareAsync()
@@ -112,7 +125,7 @@ class PodcastAudioManager(private val context: Context) {
             _isBuffering.value = false
             _isPrepared.value = false
             Log.e("PodcastAudioManager", "Error playing local file: ${e.message}", e)
-            onErrorListener?.invoke("File player error: ${e.message}")
+            onErrorListener?.invoke("Dateifehler: ${e.message}")
         }
     }
 

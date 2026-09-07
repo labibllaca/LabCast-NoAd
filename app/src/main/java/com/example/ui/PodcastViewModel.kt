@@ -301,8 +301,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _updateErrorMessage = MutableStateFlow<String?>(null)
     val updateErrorMessage: StateFlow<String?> = _updateErrorMessage.asStateFlow()
 
-    val currentAppVersion = "v1.0.0"
-    val currentBuildNumber = 101
+    val currentAppVersion = "v1.2.0"
+    val currentBuildNumber = 103
 
     private var playbackJob: Job? = null
 
@@ -382,8 +382,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val appLaunchTimestamp = System.currentTimeMillis()
 
     init {
+        audioManager.onErrorListener = { errorMsg ->
+            _isPlaying.value = false
+            _sponsorSkipEvent.value = "Audio-Fehler: $errorMsg"
+            viewModelScope.launch {
+                repository.addSyncLog("Audio Player", "Error: $errorMsg")
+            }
+        }
         viewModelScope.launch {
             repository.populateInitialDataIfNeeded(getApplication())
+            repository.validateAndCleanupCorruptDownloads(getApplication())
         }
     }
 
@@ -519,8 +527,27 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             lastSkippedAcousticAdId = null
             _lastAcousticAdAlert.value = null
 
-            // Trigger real audio engine
-            val audioTarget = currentEp.downloadLocalPath?.takeIf { it.isNotEmpty() } ?: currentEp.audioUrl
+            // Determine playback target: prioritize verified offline download
+            val localPath = currentEp.downloadLocalPath
+            val hasValidOfflineFile = EpisodeDownloader.isValidDownloadedFile(localPath)
+
+            val audioTarget = if (hasValidOfflineFile) {
+                localPath!!
+            } else {
+                if (currentEp.isDownloaded) {
+                    // Stale database flag without actual file; clean up
+                    currentEp = currentEp.copy(isDownloaded = false, downloadLocalPath = null)
+                    repository.updateEpisode(currentEp)
+                }
+                if (_isOfflineModeOnly.value) {
+                    _isPlaying.value = false
+                    _sponsorSkipEvent.value = "Episode nicht offline verfügbar. Bitte zuerst herunterladen."
+                    repository.addSyncLog("Offline Mode", "Playback blocked for '${currentEp.title}' (Not downloaded)")
+                    return@launch
+                }
+                currentEp.audioUrl
+            }
+
             audioManager.play(audioTarget, currentEp.playbackPositionMs)
             audioManager.onCompletionListener = {
                 handleEpisodeCompletion()
@@ -840,9 +867,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             _isBatchDownloading.value = true
+            _sponsorSkipEvent.value = "Batch-Download gestartet (${episodesToDownload.size} Episoden)..."
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Queued ${episodesToDownload.size} episodes for batch offline download")
 
+            var successCount = 0
             for (episode in episodesToDownload) {
+                _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to 0.05f)
                 val filePath = EpisodeDownloader.downloadToFile(
                     context = getApplication(),
                     url = episode.audioUrl,
@@ -851,27 +881,42 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
                 }
 
-                val updated = episode.copy(
-                    isDownloaded = true,
-                    downloadLocalPath = filePath ?: "/local/podcasts/${episode.id}.mp3"
-                )
-                repository.updateEpisode(updated)
+                if (EpisodeDownloader.isValidDownloadedFile(filePath)) {
+                    val updated = episode.copy(
+                        isDownloaded = true,
+                        downloadLocalPath = filePath
+                    )
+                    repository.updateEpisode(updated)
+                    successCount++
+                } else {
+                    val updated = episode.copy(
+                        isDownloaded = false,
+                        downloadLocalPath = null
+                    )
+                    repository.updateEpisode(updated)
+                }
                 _downloadProgressMap.value = _downloadProgressMap.value - episode.id
             }
 
             _isBatchDownloading.value = false
             _isMultiSelectMode.value = false
             _selectedEpisodeIds.value = emptySet()
-            repository.addSyncLog("Pixel 9 Pro (This Device)", "Batch download finished: ${episodesToDownload.size} episodes ready offline.")
+            val resultSummary = "$successCount von ${episodesToDownload.size} Episoden erfolgreich offline gespeichert."
+            _sponsorSkipEvent.value = resultSummary
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Batch download finished: $resultSummary")
         }
     }
 
     // Real Episode Download
     fun downloadEpisode(episode: EpisodeEntity) {
-        if (episode.isDownloaded) return
+        if (episode.isDownloaded && EpisodeDownloader.isValidDownloadedFile(episode.downloadLocalPath)) return
         viewModelScope.launch {
             // Check if downloading already in progress
             if (_downloadProgressMap.value.containsKey(episode.id)) return@launch
+
+            _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to 0.02f)
+            _sponsorSkipEvent.value = "Download gestartet: '${episode.title}'"
+            repository.addSyncLog("Pixel 9 Pro (This Device)", "Downloading '${episode.title}' for offline storage")
 
             val filePath = EpisodeDownloader.downloadToFile(
                 context = getApplication(),
@@ -881,22 +926,36 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
             }
 
-            // Mark as downloaded in DB
-            val updated = episode.copy(
-                isDownloaded = true,
-                downloadLocalPath = filePath ?: "/local/podcasts/${episode.id}.mp3"
-            )
-            repository.updateEpisode(updated)
-
             // Remove from progress tracker
             _downloadProgressMap.value = _downloadProgressMap.value - episode.id
 
-            // Update local state if active
-            if (_currentPlayingEpisode.value?.id == episode.id) {
-                _currentPlayingEpisode.value = updated
-            }
+            if (EpisodeDownloader.isValidDownloadedFile(filePath)) {
+                val file = java.io.File(filePath!!)
+                val sizeMb = String.format(java.util.Locale.US, "%.1f MB", file.length() / (1024.0 * 1024.0))
+                val updated = episode.copy(
+                    isDownloaded = true,
+                    downloadLocalPath = filePath
+                )
+                repository.updateEpisode(updated)
 
-            repository.addSyncLog("Pixel 9 Pro (This Device)", "Downloaded '${episode.title}' for offline playback")
+                if (_currentPlayingEpisode.value?.id == episode.id) {
+                    _currentPlayingEpisode.value = updated
+                }
+                _sponsorSkipEvent.value = "✓ Heruntergeladen ($sizeMb): '${episode.title}'"
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Downloaded '${episode.title}' ($sizeMb) for offline playback")
+            } else {
+                val updated = episode.copy(
+                    isDownloaded = false,
+                    downloadLocalPath = null
+                )
+                repository.updateEpisode(updated)
+
+                if (_currentPlayingEpisode.value?.id == episode.id) {
+                    _currentPlayingEpisode.value = updated
+                }
+                _sponsorSkipEvent.value = "Download fehlgeschlagen: Bitte Internetverbindung prüfen."
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Download failed for '${episode.title}'")
+            }
         }
     }
 
@@ -908,6 +967,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             if (_currentPlayingEpisode.value?.id == episode.id) {
                 _currentPlayingEpisode.value = updated
             }
+            _sponsorSkipEvent.value = "Offline-Kopie gelöscht: '${episode.title}'"
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Deleted offline copy of '${episode.title}'")
         }
     }

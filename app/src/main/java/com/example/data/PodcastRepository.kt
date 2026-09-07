@@ -283,6 +283,27 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
     }
 
+    suspend fun validateAndCleanupCorruptDownloads(context: android.content.Context) {
+        try {
+            val allEps = podcastDao.getAllEpisodes().first()
+            for (ep in allEps) {
+                if (ep.isDownloaded || !ep.downloadLocalPath.isNullOrEmpty()) {
+                    val path = ep.downloadLocalPath
+                    val file = if (!path.isNullOrEmpty()) java.io.File(path) else null
+                    val isValid = file != null && file.exists() && file.length() >= 15000L
+                    if (!isValid) {
+                        if (file != null && file.exists()) {
+                            try { file.delete() } catch (_: Exception) {}
+                        }
+                        podcastDao.updateEpisode(ep.copy(isDownloaded = false, downloadLocalPath = null))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PodcastRepository", "Failed to validate downloads: ${e.message}")
+        }
+    }
+
     private suspend fun cleanUpLegacyDummyData() {
         val allEps = podcastDao.getAllEpisodes().first()
         val dummyUrls = listOf("soundhelix.com", "example.com")
