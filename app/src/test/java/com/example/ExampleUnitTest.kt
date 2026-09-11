@@ -1,16 +1,52 @@
 package com.example
 
+import com.example.data.TranscriptParser
+import com.example.util.PodcastDateUtils
 import org.junit.Assert.*
 import org.junit.Test
 
-/**
- * Example local unit test, which will execute on the development machine (host).
- *
- * See [testing documentation](http://d.android.com/tools/testing).
- */
 class ExampleUnitTest {
   @Test
   fun addition_isCorrect() {
     assertEquals(4, 2 + 2)
+  }
+
+  @Test
+  fun testDateParsing() {
+    val date1 = "Thu, 10 Sep 2026 08:00:00 -0000"
+    val ts1 = PodcastDateUtils.parseDateToTimestamp(date1)
+    assertTrue("Timestamp should be > 0 for $date1, was $ts1", ts1 > 0L)
+
+    val date2 = "Mon, 07 Sep 2026 00:29:00 -0000"
+    val ts2 = PodcastDateUtils.parseDateToTimestamp(date2)
+    assertTrue("Timestamp should be > 0 for $date2, was $ts2", ts2 > 0L)
+
+    val date3 = "2026-09-04"
+    val ts3 = PodcastDateUtils.parseDateToTimestamp(date3)
+    assertTrue("Timestamp should be > 0 for $date3, was $ts3", ts3 > 0L)
+
+    assertTrue("Date1 should be after Date2", ts1 > ts2)
+  }
+
+  @Test
+  fun testTranscriptParsing() {
+    val rawWithBrackets = """
+      [00:00] Host: Welcome everyone
+      [01:30] Host: Sponsor break with AG1
+      [03:45.500] Speaker 2: Let's talk about neuroscience
+    """.trimIndent()
+
+    val segments = TranscriptParser.parseOrGenerateTranscript(
+      rawTranscript = rawWithBrackets,
+      episodeTitle = "Test Episode",
+      episodeDescription = "Test Description",
+      durationSeconds = 600L
+    )
+
+    println("Parsed segments: " + segments.map { "${it.startTimeSeconds}s: ${it.speaker} - ${it.text}" })
+    assertEquals(3, segments.size)
+    assertEquals(0L, segments[0].startTimeSeconds)
+    assertEquals(90L, segments[1].startTimeSeconds)
+    assertEquals(225L, segments[2].startTimeSeconds)
   }
 }

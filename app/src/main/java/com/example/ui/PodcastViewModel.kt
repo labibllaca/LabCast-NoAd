@@ -429,11 +429,32 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             lastRefreshTimestamps[podcastId] = System.currentTimeMillis()
 
             try {
-                Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Fetching latest episodes for '${podcast.title}' from feed: ${podcast.feedUrl}")
-                val fetched = withContext(Dispatchers.IO) {
-                    PodcastApiClient.fetchEpisodesForFeed(podcast.feedUrl, podcast.title)
+                val resolvedFeedUrl = if (podcast.feedUrl.isNotBlank()) {
+                    podcast.feedUrl
+                } else if (podcast.id.contains("huberman", ignoreCase = true)) {
+                    "https://feeds.megaphone.fm/hubermanlab"
+                } else {
+                    podcast.feedUrl
                 }
 
+                Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Fetching latest episodes for '${podcast.title}' from feed: $resolvedFeedUrl")
+                val feedResult = withContext(Dispatchers.IO) {
+                    PodcastApiClient.fetchFeedDetails(resolvedFeedUrl, podcast.title)
+                }
+
+                var currentPod = podcast
+                if (podcast.feedUrl.isBlank() && resolvedFeedUrl.isNotBlank()) {
+                    currentPod = currentPod.copy(feedUrl = resolvedFeedUrl)
+                }
+                if (!feedResult.channelCoverUrl.isNullOrBlank() && (currentPod.coverUrl.isBlank() || currentPod.coverUrl.contains("mza_10793616858548971277"))) {
+                    currentPod = currentPod.copy(coverUrl = feedResult.channelCoverUrl)
+                }
+                if (currentPod != podcast) {
+                    repository.updatePodcast(currentPod)
+                    _selectedPodcast.value = currentPod
+                }
+
+                val fetched = feedResult.episodes
                 if (fetched.isNotEmpty()) {
                     val existing = repository.getEpisodesForPodcast(podcastId).first()
                     val existingMap = existing.associateBy { it.id }
@@ -441,16 +462,17 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     val mergedEpisodes = fetched.map { f ->
                         val prev = existingMap[f.id] ?: existing.firstOrNull { it.title.equals(f.title, ignoreCase = true) }
                         val ts = if (f.publishTimestamp > 0L) f.publishTimestamp else com.example.util.PodcastDateUtils.parseDateToTimestamp(f.publishDate)
+                        val artwork = f.episodeArtworkUrl ?: currentPod.coverUrl
                         EpisodeEntity(
                             id = prev?.id ?: f.id,
-                            podcastId = podcast.id,
-                            podcastTitle = podcast.title,
-                            podcastCoverUrl = podcast.coverUrl,
+                            podcastId = currentPod.id,
+                            podcastTitle = currentPod.title,
+                            podcastCoverUrl = artwork,
                             title = f.title,
                             description = if (f.description.length >= (prev?.description?.length ?: 0)) f.description else (prev?.description ?: f.description),
                             durationSeconds = if (f.durationSeconds > 0) f.durationSeconds else (prev?.durationSeconds ?: 1800L),
                             publishDate = f.publishDate,
-                            audioUrl = f.audioUrl,
+                            audioUrl = f.audioUrl.ifEmpty { prev?.audioUrl ?: "" },
                             isDownloaded = prev?.isDownloaded ?: false,
                             downloadLocalPath = prev?.downloadLocalPath,
                             playbackPositionMs = prev?.playbackPositionMs ?: 0L,
@@ -461,7 +483,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                             transcript = f.transcript.ifEmpty { prev?.transcript ?: "" },
                             publishTimestamp = ts
                         )
-                    }.sortedByDescending { it.publishTimestamp }
+                    }.sortedWith(compareByDescending<EpisodeEntity> { it.publishTimestamp }.thenByDescending { it.publishDate })
 
                     repository.insertEpisodes(mergedEpisodes)
 
@@ -551,9 +573,14 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
                 // 1. Fetch updated rich metadata from RSS feed if online
                 val podcast = repository.getPodcastById(currentEp.podcastId)
-                if (!_isOfflineModeOnly.value && podcast != null && podcast.feedUrl.startsWith("http")) {
+                val feedUrl = when {
+                    podcast != null && podcast.feedUrl.isNotBlank() -> podcast.feedUrl
+                    currentEp.podcastId.contains("huberman", ignoreCase = true) -> "https://feeds.megaphone.fm/hubermanlab"
+                    else -> ""
+                }
+                if (!_isOfflineModeOnly.value && feedUrl.startsWith("http")) {
                     val enriched = PodcastApiClient.fetchEnrichedMetadataForEpisode(
-                        feedUrl = podcast.feedUrl,
+                        feedUrl = feedUrl,
                         episodeTitle = currentEp.title,
                         audioUrl = currentEp.audioUrl,
                         durationSeconds = currentEp.durationSeconds
@@ -571,10 +598,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         if (enriched.transcript.isNotBlank()) {
                             newTranscript = enriched.transcript
                         }
+                        val artwork = enriched.episodeArtworkUrl ?: currentEp.podcastCoverUrl
                         currentEp = currentEp.copy(
                             description = newDesc,
                             chapters = newChaps,
                             transcript = newTranscript,
+                            podcastCoverUrl = artwork,
                             adTimestampsSeconds = if (enriched.adTimestampsSeconds.isNotBlank()) enriched.adTimestampsSeconds else currentEp.adTimestampsSeconds
                         )
                     }
@@ -847,31 +876,34 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
+            // Fetch feed details first to capture channel artwork & episodes
+            val feedResult = withContext(Dispatchers.IO) {
+                PodcastApiClient.fetchFeedDetails(result.feedUrl, result.title)
+            }
+            val resolvedCoverUrl = feedResult.channelCoverUrl ?: result.coverUrl
+
             // Create new PodcastEntity and save to Room
             val newPodcast = PodcastEntity(
                 id = result.id,
                 title = result.title,
                 author = result.author,
-                description = result.description,
-                coverUrl = result.coverUrl,
+                description = if (result.description.isNotBlank()) result.description else (feedResult.channelDescription ?: ""),
+                coverUrl = resolvedCoverUrl,
                 category = result.category,
-                isSubscribed = true
+                isSubscribed = true,
+                feedUrl = result.feedUrl
             )
             repository.insertPodcast(newPodcast)
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Subscribed to '${result.title}' via ${result.source.displayName}")
 
-            // Fetch and save episodes for this show
-            val feedEpisodes = withContext(Dispatchers.IO) {
-                PodcastApiClient.fetchEpisodesForFeed(result.feedUrl, result.title)
-            }
-
-            val episodeEntities = feedEpisodes.map { ep ->
+            val episodeEntities = feedResult.episodes.map { ep ->
                 val ts = if (ep.publishTimestamp > 0L) ep.publishTimestamp else com.example.util.PodcastDateUtils.parseDateToTimestamp(ep.publishDate)
+                val artwork = ep.episodeArtworkUrl ?: resolvedCoverUrl
                 EpisodeEntity(
                     id = ep.id,
                     podcastId = result.id,
                     podcastTitle = result.title,
-                    podcastCoverUrl = result.coverUrl,
+                    podcastCoverUrl = artwork,
                     title = ep.title,
                     description = ep.description,
                     durationSeconds = ep.durationSeconds,
@@ -883,7 +915,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     transcript = ep.transcript,
                     publishTimestamp = ts
                 )
-            }.sortedByDescending { it.publishTimestamp }
+            }.sortedWith(compareByDescending<EpisodeEntity> { it.publishTimestamp }.thenByDescending { it.publishDate })
 
             if (episodeEntities.isNotEmpty()) {
                 repository.insertEpisodes(episodeEntities)

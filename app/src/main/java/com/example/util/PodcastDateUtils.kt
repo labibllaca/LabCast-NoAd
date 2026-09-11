@@ -6,18 +6,22 @@ import java.util.*
 object PodcastDateUtils {
 
     private val rfcPatterns = listOf(
-        "EEE, dd MMM yyyy HH:mm:ss z",
         "EEE, dd MMM yyyy HH:mm:ss Z",
+        "EEE, dd MMM yyyy HH:mm:ss z",
         "EEE, dd MMM yyyy HH:mm:ss",
-        "EEE, d MMM yyyy HH:mm:ss z",
         "EEE, d MMM yyyy HH:mm:ss Z",
-        "EEE, dd MMM yyyy HH:mm z",
+        "EEE, d MMM yyyy HH:mm:ss z",
+        "EEE, d MMM yyyy HH:mm:ss",
         "EEE, dd MMM yyyy HH:mm Z",
-        "dd MMM yyyy HH:mm:ss z",
+        "EEE, dd MMM yyyy HH:mm z",
+        "EEE, d MMM yyyy HH:mm Z",
+        "EEE, d MMM yyyy HH:mm z",
         "dd MMM yyyy HH:mm:ss Z",
+        "dd MMM yyyy HH:mm:ss z",
         "dd MMM yyyy HH:mm:ss",
-        "d MMM yyyy HH:mm:ss z",
         "d MMM yyyy HH:mm:ss Z",
+        "d MMM yyyy HH:mm:ss z",
+        "d MMM yyyy HH:mm:ss",
         "yyyy-MM-dd'T'HH:mm:ssX",
         "yyyy-MM-dd'T'HH:mm:ss.SSSX",
         "yyyy-MM-dd'T'HH:mm:ss'Z'",
@@ -25,20 +29,53 @@ object PodcastDateUtils {
         "yyyy-MM-dd HH:mm:ss",
         "yyyy-MM-dd",
         "MMM dd, yyyy",
+        "MMM d, yyyy",
         "dd MMM yyyy",
-        "yyyy/MM/dd"
+        "d MMM yyyy",
+        "yyyy/MM/dd",
+        "dd.MM.yyyy"
     )
 
     fun parseDateToTimestamp(rawDate: String?): Long {
         if (rawDate.isNullOrBlank()) return 0L
-        val trimmed = rawDate.trim()
+        val trimmed = rawDate.replace(Regex("\\s+"), " ").trim()
 
-        // Check if raw string is numeric timestamp (e.g. epoch millis)
+        // Check if raw string is numeric timestamp (e.g. epoch millis or seconds)
         val numeric = trimmed.toLongOrNull()
         if (numeric != null && numeric > 1000000000L) {
             return if (numeric < 1000000000000L) numeric * 1000L else numeric
         }
 
+        // Normalize timezone names to numerical offsets for reliable SimpleDateFormat parsing
+        val normalized = trimmed
+            .replace(Regex("""\bEDT\b""", RegexOption.IGNORE_CASE), "-0400")
+            .replace(Regex("""\bEST\b""", RegexOption.IGNORE_CASE), "-0500")
+            .replace(Regex("""\bCDT\b""", RegexOption.IGNORE_CASE), "-0500")
+            .replace(Regex("""\bCST\b""", RegexOption.IGNORE_CASE), "-0600")
+            .replace(Regex("""\bMDT\b""", RegexOption.IGNORE_CASE), "-0600")
+            .replace(Regex("""\bMST\b""", RegexOption.IGNORE_CASE), "-0700")
+            .replace(Regex("""\bPDT\b""", RegexOption.IGNORE_CASE), "-0700")
+            .replace(Regex("""\bPST\b""", RegexOption.IGNORE_CASE), "-0800")
+            .replace(Regex("""\bBST\b""", RegexOption.IGNORE_CASE), "+0100")
+            .replace(Regex("""\bCET\b""", RegexOption.IGNORE_CASE), "+0100")
+            .replace(Regex("""\bCEST\b""", RegexOption.IGNORE_CASE), "+0200")
+            .replace(Regex("""\bUTC\b""", RegexOption.IGNORE_CASE), "+0000")
+            .replace(Regex("""\bGMT\b""", RegexOption.IGNORE_CASE), "+0000")
+
+        for (pattern in rfcPatterns) {
+            try {
+                val sdf = SimpleDateFormat(pattern, Locale.US)
+                sdf.timeZone = TimeZone.getTimeZone("UTC")
+                val date = sdf.parse(normalized)
+                if (date != null) {
+                    return date.time
+                }
+            } catch (_: Exception) {
+                // Try next pattern
+            }
+        }
+
+        // Fallback for original un-normalized string
         for (pattern in rfcPatterns) {
             try {
                 val sdf = SimpleDateFormat(pattern, Locale.US)
@@ -67,10 +104,10 @@ object PodcastDateUtils {
         val wordDateMatch = Regex("""(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})""", RegexOption.IGNORE_CASE).find(trimmed)
         if (wordDateMatch != null) {
             try {
-                val normalized = "${wordDateMatch.groupValues[1]} ${wordDateMatch.groupValues[2]} ${wordDateMatch.groupValues[3]}"
+                val norm = "${wordDateMatch.groupValues[1]} ${wordDateMatch.groupValues[2]} ${wordDateMatch.groupValues[3]}"
                 val sdf = SimpleDateFormat("dd MMM yyyy", Locale.US)
                 sdf.timeZone = TimeZone.getTimeZone("UTC")
-                val date = sdf.parse(normalized)
+                val date = sdf.parse(norm)
                 if (date != null) return date.time
             } catch (_: Exception) {}
         }
@@ -94,7 +131,6 @@ object PodcastDateUtils {
         if (rawDate.isNullOrBlank()) return Pair("Recent", 0L)
         val ts = parseDateToTimestamp(rawDate)
         if (ts <= 0L) {
-            // Keep original short string if it exists and clean it
             val clean = rawDate.take(20).trim()
             return Pair(clean.ifEmpty { "Recent" }, 0L)
         }
@@ -102,3 +138,4 @@ object PodcastDateUtils {
         return Pair(display, ts)
     }
 }
+

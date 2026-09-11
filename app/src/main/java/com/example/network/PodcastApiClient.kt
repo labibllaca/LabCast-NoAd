@@ -30,7 +30,15 @@ data class FeedEpisode(
     val adTimestampsSeconds: String = "",
     val chapters: String = "",
     val transcript: String = "",
-    val publishTimestamp: Long = 0L
+    val publishTimestamp: Long = 0L,
+    val episodeArtworkUrl: String? = null
+)
+
+data class FeedResult(
+    val episodes: List<FeedEpisode>,
+    val channelCoverUrl: String? = null,
+    val channelTitle: String? = null,
+    val channelDescription: String? = null
 )
 
 data class EnrichedEpisodeMetadata(
@@ -38,7 +46,8 @@ data class EnrichedEpisodeMetadata(
     val chapters: String,
     val adTimestampsSeconds: String,
     val transcript: String,
-    val durationSeconds: Long
+    val durationSeconds: Long,
+    val episodeArtworkUrl: String? = null
 )
 
 enum class PodcastSource(val displayName: String, val badgeColorHex: Long) {
@@ -67,6 +76,30 @@ object PodcastApiClient {
         if (trimmedQuery.isEmpty()) return emptyList()
 
         val results = mutableListOf<SearchResultPodcast>()
+
+        // 0. Direct RSS URL handling: If user pasted an RSS/Atom feed URL directly
+        if (trimmedQuery.startsWith("http://", ignoreCase = true) || trimmedQuery.startsWith("https://", ignoreCase = true)) {
+            try {
+                val feedResult = fetchFeedDetails(trimmedQuery, "RSS Feed")
+                val title = feedResult.channelTitle ?: "Direct RSS Podcast"
+                val desc = feedResult.channelDescription ?: "Custom subscribed RSS podcast feed."
+                val cover = feedResult.channelCoverUrl ?: "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=400&auto=format&fit=crop&q=60"
+                return listOf(
+                    SearchResultPodcast(
+                        id = "rss_" + Math.abs(trimmedQuery.hashCode()).toString(16),
+                        title = title,
+                        author = "RSS Feed",
+                        description = desc,
+                        coverUrl = cover,
+                        category = "Custom Feed",
+                        feedUrl = trimmedQuery,
+                        source = PodcastSource.CUSTOM_RSS,
+                        trackCount = feedResult.episodes.size,
+                        releaseDate = feedResult.episodes.firstOrNull()?.publishDate ?: "Recent"
+                    )
+                )
+            } catch (_: Exception) {}
+        }
 
         // 1. Apple iTunes Search API (public, no key required, covers millions of real podcasts)
         try {
@@ -151,7 +184,7 @@ object PodcastApiClient {
         return try {
             val request = Request.Builder()
                 .url(feedUrl)
-                .header("User-Agent", "LabCast/1.0 (Android)")
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
                 .build()
             val response = client.newCall(request).execute()
             if (response.isSuccessful) {
@@ -166,21 +199,46 @@ object PodcastApiClient {
         }
     }
 
-    suspend fun fetchEpisodesForFeed(feedUrl: String, podcastTitle: String): List<FeedEpisode> {
-        val episodes = mutableListOf<FeedEpisode>()
-
+    suspend fun fetchFeedDetails(feedUrl: String, podcastTitle: String = ""): FeedResult {
         val xml = getOrFetchFeedXml(feedUrl)
         if (!xml.isNullOrEmpty()) {
-            episodes.addAll(parseRssFeed(xml))
+            val channelImgRegex = Regex("""(?:<itunes:image[^>]*href=["']([^"']+)["']|<image>\s*<url>(.*?)</url>)""", RegexOption.IGNORE_CASE)
+            val channelTitleRegex = Regex("""<channel[^>]*>.*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val channelDescRegex = Regex("""<channel[^>]*>.*?<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+
+            val channelCover = channelImgRegex.find(xml)?.let { match ->
+                val g1 = match.groupValues.getOrNull(1)
+                val g2 = match.groupValues.getOrNull(2)
+                if (!g1.isNullOrEmpty()) g1 else if (!g2.isNullOrEmpty()) g2 else null
+            }?.trim()
+
+            val title = channelTitleRegex.find(xml)?.groupValues?.getOrNull(1)?.let { cleanHtml(it) }?.trim()
+            val desc = channelDescRegex.find(xml)?.groupValues?.getOrNull(1)?.let { cleanHtml(it) }?.trim()
+
+            val parsedEpisodes = parseRssFeed(xml)
+            if (parsedEpisodes.isNotEmpty()) {
+                return FeedResult(
+                    episodes = parsedEpisodes,
+                    channelCoverUrl = channelCover,
+                    channelTitle = title,
+                    channelDescription = desc
+                )
+            }
         }
 
-        // If RSS was empty or blocked by CORS/timeout, generate clean high-quality structured episodes for the show
-        if (episodes.isEmpty()) {
-            episodes.addAll(CuratedPodcastCatalog.generateEpisodesForShow(podcastTitle))
-        }
+        // Fallback to catalog or generated episodes
+        val fallbackEpisodes = CuratedPodcastCatalog.generateEpisodesForShow(podcastTitle)
+        return FeedResult(
+            episodes = fallbackEpisodes,
+            channelCoverUrl = null,
+            channelTitle = podcastTitle,
+            channelDescription = null
+        )
+    }
 
-        episodes.sortByDescending { it.publishTimestamp }
-        return episodes
+    suspend fun fetchEpisodesForFeed(feedUrl: String, podcastTitle: String): List<FeedEpisode> {
+        val details = fetchFeedDetails(feedUrl, podcastTitle)
+        return details.episodes
     }
 
     suspend fun fetchEnrichedMetadataForEpisode(
@@ -244,12 +302,16 @@ object PodcastApiClient {
                         } catch (_: Exception) {}
                     }
 
+                    val epImageRegex = Regex("""<itunes:image[^>]*href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                    val epArtwork = epImageRegex.find(itemBlock)?.groups?.get(1)?.value
+
                     return EnrichedEpisodeMetadata(
                         description = richDesc,
                         chapters = chaptersStr,
                         adTimestampsSeconds = "45,${durationSeconds / 2}",
                         transcript = transcriptStr,
-                        durationSeconds = durationSeconds
+                        durationSeconds = durationSeconds,
+                        episodeArtworkUrl = epArtwork
                     )
                 }
             }
@@ -260,51 +322,62 @@ object PodcastApiClient {
     private fun parseRssFeed(xml: String): List<FeedEpisode> {
         val list = mutableListOf<FeedEpisode>()
         try {
-            // Extraction of <item> blocks from RSS XML
-            val itemRegex = Regex("<item>(.*?)</item>", RegexOption.DOT_MATCHES_ALL)
-            val titleRegex = Regex("<title><!\\[CDATA\\[(.*?)\\]\\]></title>|<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
-            val descRegex = Regex("<description><!\\[CDATA\\[(.*?)\\]\\]></description>|<description>(.*?)</description>", RegexOption.DOT_MATCHES_ALL)
-            val contentEncodedRegex = Regex("<content:encoded><!\\[CDATA\\[(.*?)\\]\\]></content:encoded>|<content:encoded>(.*?)</content:encoded>", RegexOption.DOT_MATCHES_ALL)
-            val enclosureRegex = Regex("<enclosure[^>]*url=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
-            val pubDateRegex = Regex("<(?:pubDate|dc:date|published|updated)>(.*?)</(?:pubDate|dc:date|published|updated)>", RegexOption.IGNORE_CASE)
-            val durationRegex = Regex("<itunes:duration>(.*?)</itunes:duration>", RegexOption.IGNORE_CASE)
+            // Extraction of <item> or <entry> blocks from RSS/Atom XML
+            val itemRegex = Regex("""<(?:item|entry)[^>]*>(.*?)</(?:item|entry)>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val titleRegex = Regex("""<title[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val descRegex = Regex("""<description[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</description>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val contentEncodedRegex = Regex("""<(?:content:encoded|content)[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</(?:content:encoded|content)>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+            val enclosureRegex = Regex("""(?:<enclosure[^>]*url=["']([^"']+)["']|<media:content[^>]*url=["']([^"']+)["']|<link[^>]*rel=["']enclosure["'][^>]*href=["']([^"']+)["'])""", RegexOption.IGNORE_CASE)
+            val pubDateRegex = Regex("""<(?:[a-zA-Z0-9_-]+:)?(?:pubDate|published|updated|date)[^>]*>(.*?)</(?:[a-zA-Z0-9_-]+:)?(?:pubDate|published|updated|date)>""", RegexOption.IGNORE_CASE)
+            val durationRegex = Regex("""<(?:itunes:duration|duration)[^>]*>(.*?)</(?:itunes:duration|duration)>""", RegexOption.IGNORE_CASE)
+            val guidRegex = Regex("""<(?:guid|id)[^>]*>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</(?:guid|id)>""", RegexOption.IGNORE_CASE)
+            val epImageRegex = Regex("""<itunes:image[^>]*href=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 
-            val matches = itemRegex.findAll(xml).take(25)
+            // Extract up to 150 episodes for rich, complete catalog loading
+            val matches = itemRegex.findAll(xml).take(150).toList()
             var index = 1
             for (match in matches) {
                 val itemBlock = match.groupValues[1]
 
-                val titleMatch = titleRegex.find(itemBlock)
-                val rawTitle = titleMatch?.groups?.get(1)?.value ?: titleMatch?.groups?.get(2)?.value ?: "Episode $index"
+                val rawTitle = titleRegex.find(itemBlock)?.groupValues?.getOrNull(1) ?: "Episode $index"
                 val cleanTitle = cleanHtml(rawTitle)
 
                 // Get best description from content:encoded or description
-                val contentEncoded = contentEncodedRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
-                val descMatch = descRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
+                val contentEncoded = contentEncodedRegex.find(itemBlock)?.groupValues?.getOrNull(1)
+                val descMatch = descRegex.find(itemBlock)?.groupValues?.getOrNull(1)
                 val rawDesc = contentEncoded ?: descMatch ?: "Full episode details and commentary."
                 val cleanDesc = cleanHtml(rawDesc).take(4000)
 
-                val audioUrl = enclosureRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
-                val rawPubDate = pubDateRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
+                val encMatch = enclosureRegex.find(itemBlock)
+                val audioUrl = encMatch?.groupValues?.getOrNull(1)?.takeIf { it.isNotEmpty() }
+                    ?: encMatch?.groupValues?.getOrNull(2)?.takeIf { it.isNotEmpty() }
+                    ?: encMatch?.groupValues?.getOrNull(3)?.takeIf { it.isNotEmpty() }
+                    ?: ""
+
+                val rawPubDate = pubDateRegex.find(itemBlock)?.groupValues?.getOrNull(1) ?: ""
                 val (cleanPubDate, timestampMs) = com.example.util.PodcastDateUtils.parseAndFormat(rawPubDate)
 
-                val durationStr = durationRegex.find(itemBlock)?.groups?.get(1)?.value ?: "1800"
+                val durationStr = durationRegex.find(itemBlock)?.groupValues?.getOrNull(1) ?: "1800"
                 val durationSec = parseDurationToSeconds(durationStr)
+
+                val epImage = epImageRegex.find(itemBlock)?.groupValues?.getOrNull(1)?.trim()
+
+                // Stable episode identifier based on GUID or audio URL
+                val rawGuid = guidRegex.find(itemBlock)?.groupValues?.getOrNull(1)?.trim() ?: ""
+                val stableKey = rawGuid.ifEmpty { audioUrl.ifEmpty { cleanTitle } }
+                val epId = "ep_" + Math.abs(stableKey.hashCode()).toString(16)
 
                 // Extract all structured chapters (Podlove XML, Podcasting 2.0 namespace, Show notes timestamps)
                 val parsedChapters = com.example.data.ChapterParser.parseFromFeedItem(itemBlock, durationSec)
                 val chaptersPipeString = if (parsedChapters.isNotEmpty()) {
                     com.example.data.ChapterParser.toPipeString(parsedChapters)
                 } else {
-                    // Intelligent fallback chapter structure if show notes had no timestamps
                     val sponsorTime = (durationSec * 0.15).toLong().coerceAtLeast(60L)
                     val mainTime = (durationSec * 0.25).toLong().coerceAtLeast(180L)
                     val deepTime = (durationSec * 0.65).toLong().coerceAtLeast(360L)
                     val wrapTime = (durationSec * 0.90).toLong().coerceAtLeast(480L)
                     "0:Introduction & Overview|$sponsorTime:Sponsor: Featured Partner|$mainTime:Discussion & Main Topic|$deepTime:In-Depth Analysis & Commentary|$wrapTime:Wrap-up & Key Points"
                 }
-
-                val epId = "rss_${cleanTitle.hashCode().toString().replace("-", "x")}_$index"
 
                 // Generate timestamped transcript with identified sponsor strings
                 val generatedTranscriptSegments = com.example.data.TranscriptParser.parseOrGenerateTranscript(
@@ -329,7 +402,8 @@ object PodcastApiClient {
                         adTimestampsSeconds = "45,${durationSec / 2}",
                         chapters = chaptersPipeString,
                         transcript = transcriptFormatted,
-                        publishTimestamp = timestampMs
+                        publishTimestamp = timestampMs,
+                        episodeArtworkUrl = epImage
                     )
                 )
                 index++
@@ -380,7 +454,7 @@ object CuratedPodcastCatalog {
             title = "Huberman Lab",
             author = "Scicomm Media / Dr. Andrew Huberman",
             description = "Neuroscience, human performance, science-based tools for everyday life, deep sleep optimization, and neuroplasticity.",
-            coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+            coverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
             category = "Health & Fitness",
             feedUrl = "https://feeds.megaphone.fm/hubermanlab",
             source = PodcastSource.ITUNES,

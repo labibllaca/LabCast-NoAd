@@ -87,6 +87,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
             if (!isAlreadySeeded && currentPodcasts.isNotEmpty()) {
                 prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
             }
+            healExistingDataIfNeeded()
             return
         }
 
@@ -96,7 +97,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 title = "Huberman Lab",
                 author = "Scicomm Media / Dr. Andrew Huberman",
                 description = "The Huberman Lab podcast discusses neuroscience and science-based tools, including how our brain and its connections with the organs of our body control our perceptions, our behaviors, and our health.",
-                coverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                coverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
                 category = "Health & Fitness",
                 isSubscribed = true,
                 feedUrl = "https://feeds.megaphone.fm/hubermanlab"
@@ -167,7 +168,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 id = "ep_huberman_1",
                 podcastId = "pod_huberman_1545953110",
                 podcastTitle = "Huberman Lab",
-                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                podcastCoverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
                 title = "Essentials: Use Sleep to Enhance Learning, Memory & Emotional State | Dr. Gina Poe",
                 description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.",
                 durationSeconds = 2040, // 34 minutes
@@ -177,13 +178,14 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "407,1196,1718",
                 chapters = "0:Dr. Gina Poe Introduction|19:Sleep States & Perfect Night's Sleep|143:Early Sleep & Memory Processing|274:Growth Hormone & Consistent Bedtime|407:Sponsor: LMNT|500:Alcohol & Negative Sleep Effects|558:Middle Sleep States & Creativity|632:Waking During Night & Hydration|699:REM, Deep Sleep & Sleepwalking|841:Morning Grogginess & Trackers|953:Brain Waste Clearance & Glial Flow|1196:Sponsor: Eight Sleep|1274:Locus Coeruleus & Calm Bedtime Routine|1516:Sleep Spindles & Learning|1718:Sponsor: AG1|1796:Trauma Recovery & REM Sleep|2009:Acknowledgements & Disclaimers",
-                transcript = "0:00 [Host] Welcome to Huberman Lab. Today we are joined by Dr. Gina Poe to discuss the architecture of sleep.\n00:45 [Sponsor Break] This episode is brought to you by AG1 and LMNT. AG1 is your daily foundational nutrition drink. Use promo code HUBERMAN for 20% off.\n02:23 [Host] Dr. Poe, let's start with how deep sleep consolidates memories.\n06:47 [Host [Sponsor]] Quick break for our sponsor Eight Sleep. The Pod 4 Ultra cover regulates temperature dynamically while you sleep.\n19:56 [Host [Sponsor]] Brought to you by LMNT zero-sugar hydration electrolytes. Visit drinklmnt.com/huberman.\n25:10 [Guest] As we move into REM sleep, the brain actively strips emotional charge from difficult memories."
+                transcript = "0:00 [Host] Welcome to Huberman Lab. Today we are joined by Dr. Gina Poe to discuss the architecture of sleep.\n00:45 [Sponsor Break] This episode is brought to you by AG1 and LMNT. AG1 is your daily foundational nutrition drink. Use promo code HUBERMAN for 20% off.\n02:23 [Host] Dr. Poe, let's start with how deep sleep consolidates memories.\n06:47 [Host [Sponsor]] Quick break for our sponsor Eight Sleep. The Pod 4 Ultra cover regulates temperature dynamically while you sleep.\n19:56 [Host [Sponsor]] Brought to you by LMNT zero-sugar hydration electrolytes. Visit drinklmnt.com/huberman.\n25:10 [Guest] As we move into REM sleep, the brain actively strips emotional charge from difficult memories.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-03")
             ),
             EpisodeEntity(
                 id = "ep_huberman_2",
                 podcastId = "pod_huberman_1545953110",
                 podcastTitle = "Huberman Lab",
-                podcastCoverUrl = "https://is1-ssl.mzstatic.com/image/thumb/Podcasts113/v4/31/34/00/31340019-3f0e-e377-df35-18151c6ef0ad/mza_10793616858548971277.jpg/600x600bb.jpg",
+                podcastCoverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
                 title = "Master Your Dopamine & Drive for Focus, Motivation & Performance",
                 description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.",
                 durationSeconds = 2400, // 40 mins
@@ -193,7 +195,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "180,960",
                 chapters = "0:Dopamine Dynamics Overview|180:Sponsor: Athletic Greens|270:The Dopamine Baseline & Peaks|540:Effort and the Reward Circuit|960:Sponsor: InsideTracker|1050:Cold Exposure & Neurotransmitter Release|1500:Intermittent Reward Schedules|2100:Actionable Protocols & Summary",
-                transcript = "0:00 [Host] Welcome back. Today's deep dive is centered on dopamine dynamics and focus.\n03:00 [Sponsor Break] Brought to you by Athletic Greens AG1. Nutrient-dense daily greens for immune support and gut health.\n04:30 [Host] Understanding baseline dopamine versus peak dopamine is critical for long-term motivation.\n16:00 [Sponsor Break] Today's episode is sponsored by InsideTracker. Personalized biometric blood analysis for optimal performance.\n25:00 [Host] Cold exposure triggers a sustained 250% increase in baseline dopamine and epinephrine."
+                transcript = "0:00 [Host] Welcome back. Today's deep dive is centered on dopamine dynamics and focus.\n03:00 [Sponsor Break] Brought to you by Athletic Greens AG1. Nutrient-dense daily greens for immune support and gut health.\n04:30 [Host] Understanding baseline dopamine versus peak dopamine is critical for long-term motivation.\n16:00 [Sponsor Break] Today's episode is sponsored by InsideTracker. Personalized biometric blood analysis for optimal performance.\n25:00 [Host] Cold exposure triggers a sustained 250% increase in baseline dopamine and epinephrine.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-08-27")
             ),
             EpisodeEntity(
                 id = "ep_shqip_1",
@@ -209,7 +212,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "120,600",
                 chapters = "0:Hyrje dhe Ngjarja Kryesore|120:Sponsor: Njoftime & Partnerë|210:Dëshmitë e Para|600:Reklamë / Sponsor|690:Zhvillimet e Hetimit|1200:Konkluzionet dhe Mesazhi Përfundimtar",
-                transcript = "0:00 [Mprehësi] Mirë se vini në Shqip Story Podcast. Sot dëgjojmë rrëfime autentike nga arkiva.\n02:00 [Sponsor Break] Ky episod mbështetet nga partnerët tanë zyrtarë. Përdorni kodin SHQIP për ulje speciale.\n03:30 [Mprehësi] Dëshmitari i parë tregon se si ngjarja filloi gjatë vitit 1998 në rajonin verior.\n10:00 [Sponsor Break] Reklamë e shkurtër nga sponsori yne i dytë BetterHelp terapi në internet."
+                transcript = "0:00 [Mprehësi] Mirë se vini në Shqip Story Podcast. Sot dëgjojmë rrëfime autentike nga arkiva.\n02:00 [Sponsor Break] Ky episod mbështetet nga partnerët tanë zyrtarë. Përdorni kodin SHQIP për ulje speciale.\n03:30 [Mprehësi] Dëshmitari i parë tregon se si ngjarja filloi gjatë vitit 1998 në rajonin verior.\n10:00 [Sponsor Break] Reklamë e shkurtër nga sponsori yne i dytë BetterHelp terapi në internet.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-08-30")
             ),
             EpisodeEntity(
                 id = "ep_harbinger_1",
@@ -225,7 +229,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "180,840,1500",
                 chapters = "0:Welcome & Guest Intro|180:Sponsor: BetterHelp|270:Micro-Expressions and Verbal Cues|540:The Anatomy of Social Engineering|840:Sponsor: Shopify|930:Emotional Anchoring Techniques|1500:Sponsor: SimpliSafe|1590:Building Psychological Resilience|1950:Jordan's Final Thoughts",
-                transcript = "0:00 [Jordan] Welcome to the Jordan Harbinger Show. Today we're deconstructing deception detection tactics.\n03:00 [Sponsor Break] This episode is brought to you by BetterHelp online therapy. Visit betterhelp.com/jordan for 10% off.\n04:30 [Guest] When people lie under stress, micro-expressions reveal hidden emotional state.\n14:00 [Sponsor Break] Sponsored by Shopify. Build your online business today for just \$1 per month at shopify.com/jordan.\n25:00 [Sponsor Break] Supported by SimpliSafe home security systems. Protect your home with 24/7 monitoring."
+                transcript = "0:00 [Jordan] Welcome to the Jordan Harbinger Show. Today we're deconstructing deception detection tactics.\n03:00 [Sponsor Break] This episode is brought to you by BetterHelp online therapy. Visit betterhelp.com/jordan for 10% off.\n04:30 [Guest] When people lie under stress, micro-expressions reveal hidden emotional state.\n14:00 [Sponsor Break] Sponsored by Shopify. Build your online business today for just \$1 per month at shopify.com/jordan.\n25:00 [Sponsor Break] Supported by SimpliSafe home security systems. Protect your home with 24/7 monitoring.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-02")
             ),
             EpisodeEntity(
                 id = "ep_aom_1",
@@ -241,7 +246,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "240,900",
                 chapters = "0:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up",
-                transcript = "0:00 [Brett] Welcome back to the Art of Manliness podcast. Today we discuss stoic resilience.\n04:00 [Sponsor Break] Brought to you by Huckberry. Exceptional outdoor gear, boots, and clothing. Use code AOM20.\n05:30 [Brett] Epictetus famously wrote that we control our intentions and actions, but not external events.\n15:00 [Sponsor Break] Sponsored by Factor Meals. Fresh, chef-crafted meals delivered right to your doorstep."
+                transcript = "0:00 [Brett] Welcome back to the Art of Manliness podcast. Today we discuss stoic resilience.\n04:00 [Sponsor Break] Brought to you by Huckberry. Exceptional outdoor gear, boots, and clothing. Use code AOM20.\n05:30 [Brett] Epictetus famously wrote that we control our intentions and actions, but not external events.\n15:00 [Sponsor Break] Sponsored by Factor Meals. Fresh, chef-crafted meals delivered right to your doorstep.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-01")
             ),
             EpisodeEntity(
                 id = "ep_peterson_1",
@@ -257,7 +263,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "300,1200",
                 chapters = "0:Introduction & Genesis of Purpose|300:Sponsor: DailyWire+|390:Chaos, Order, and the Sacred Border|840:The Hero's Journey Across Cultures|1200:Sponsor: ExpressVPN|1290:Voluntary Confrontation with Adversity|2100:The Role of Art & Conscience|2550:Closing Reflections",
-                transcript = "0:00 [Dr. Peterson] Hello everyone. Today's discussion focuses on voluntary responsibility.\n05:00 [Sponsor Break] This episode is brought to you by DailyWire+. Access exclusive documentaries and news.\n06:30 [Dr. Peterson] When you adopt responsibility for your life and community, meaning emerges naturally.\n20:00 [Sponsor Break] Sponsored by ExpressVPN. Protect your online data and private internet browsing."
+                transcript = "0:00 [Dr. Peterson] Hello everyone. Today's discussion focuses on voluntary responsibility.\n05:00 [Sponsor Break] This episode is brought to you by DailyWire+. Access exclusive documentaries and news.\n06:30 [Dr. Peterson] When you adopt responsibility for your life and community, meaning emerges naturally.\n20:00 [Sponsor Break] Sponsored by ExpressVPN. Protect your online data and private internet browsing.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-08-31")
             ),
             EpisodeEntity(
                 id = "ep_batman_1",
@@ -273,19 +280,65 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "90,720",
                 chapters = "0:Gotham City Siren & Storm|90:Sponsor: DC Universe Infinite|180:Descent into Arkham Lower Ward|450:Encounter with Scarecrow's Toxin|720:Ad Break: Batman Graphic Novels|810:The Batmobile Pursuit through Burnside|1200:The Riddler's Cryptic Warning|1410:To Be Continued...",
-                transcript = "0:00 [Narrator] Lightning illuminates the dark skyline of Gotham City as sirens echo over Wayne Manor.\n01:30 [Sponsor Break] Brought to you by DC Universe Infinite. Read over 25,000 digital comics.\n03:00 [Batman] Alfred, scan the Arkham perimeter. We have multiple perimeter breaches on sub-level 4.\n12:00 [Sponsor Break] Special ad break for Batman Year One hardcover graphic novel collection."
+                transcript = "0:00 [Narrator] Lightning illuminates the dark skyline of Gotham City as sirens echo over Wayne Manor.\n01:30 [Sponsor Break] Brought to you by DC Universe Infinite. Read over 25,000 digital comics.\n03:00 [Batman] Alfred, scan the Arkham perimeter. We have multiple perimeter breaches on sub-level 4.\n12:00 [Sponsor Break] Special ad break for Batman Year One hardcover graphic novel collection.",
+                publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-04")
             )
         )
 
         podcastDao.insertPodcasts(defaultPodcasts)
         podcastDao.insertEpisodes(defaultEpisodes)
 
-        // Clean up legacy dummy URLs if present
+        // Clean up legacy dummy URLs if present and heal existing data
+        healExistingDataIfNeeded()
         cleanUpLegacyDummyData()
 
         prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
 
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
+    }
+
+    suspend fun healExistingDataIfNeeded() {
+        try {
+            val validHubermanCover = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600"
+            val allPodcastsList = allPodcasts.first()
+            for (pod in allPodcastsList) {
+                var updated = pod
+                var changed = false
+                if (pod.coverUrl.contains("mza_10793616858548971277") || (pod.id.contains("huberman", ignoreCase = true) && pod.coverUrl.isBlank())) {
+                    updated = updated.copy(coverUrl = validHubermanCover)
+                    changed = true
+                }
+                if (pod.feedUrl.isBlank() && pod.id.contains("huberman", ignoreCase = true)) {
+                    updated = updated.copy(feedUrl = "https://feeds.megaphone.fm/hubermanlab")
+                    changed = true
+                }
+                if (changed) {
+                    podcastDao.updatePodcast(updated)
+                }
+            }
+
+            val allEpisodesList = podcastDao.getAllEpisodes().first()
+            for (ep in allEpisodesList) {
+                var updatedEp = ep
+                var changed = false
+                if (ep.podcastCoverUrl.contains("mza_10793616858548971277")) {
+                    updatedEp = updatedEp.copy(podcastCoverUrl = validHubermanCover)
+                    changed = true
+                }
+                if (ep.publishTimestamp <= 0L && ep.publishDate.isNotBlank()) {
+                    val ts = com.example.util.PodcastDateUtils.parseDateToTimestamp(ep.publishDate)
+                    if (ts > 0L) {
+                        updatedEp = updatedEp.copy(publishTimestamp = ts)
+                        changed = true
+                    }
+                }
+                if (changed) {
+                    podcastDao.updateEpisode(updatedEp)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PodcastRepository", "Data healing error: ${e.message}")
+        }
     }
 
     suspend fun validateAndCleanupCorruptDownloads(context: android.content.Context) {

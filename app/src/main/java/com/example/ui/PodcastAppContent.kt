@@ -69,9 +69,25 @@ fun SmartPodcastImage(
     var autoRetryCount by remember(imageUrl, reloadKey) { mutableIntStateOf(0) }
     var imageStateKey by remember(imageUrl, reloadKey) { mutableIntStateOf(0) }
 
-    val imageRequest = remember(imageUrl, imageStateKey) {
+    val sanitizedUrl = remember(imageUrl) {
+        if (imageUrl.isNullOrBlank()) null
+        else if (imageUrl.contains("mza_10793616858548971277")) {
+            "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600"
+        } else if (imageUrl.startsWith("http://")) {
+            imageUrl.replaceFirst("http://", "https://")
+        } else {
+            imageUrl.trim()
+        }
+    }
+
+    if (sanitizedUrl.isNullOrBlank()) {
+        PodcastPlaceholderArt(title = contentDescription, modifier = modifier)
+        return
+    }
+
+    val imageRequest = remember(sanitizedUrl, imageStateKey) {
         ImageRequest.Builder(context)
-            .data(imageUrl)
+            .data(sanitizedUrl)
             .crossfade(true)
             .build()
     }
@@ -115,37 +131,63 @@ fun SmartPodcastImage(
                     )
                 }
             } else {
-                Box(
+                PodcastPlaceholderArt(
+                    title = contentDescription,
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(DarkCharcoal)
                         .clickable {
                             autoRetryCount = 0
                             imageStateKey++
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Retry image",
-                            tint = TextGray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Neu laden",
-                            color = TextGray,
-                            fontSize = 9.sp
-                        )
-                    }
-                }
+                        }
+                )
             }
         }
     )
+}
+
+@Composable
+fun PodcastPlaceholderArt(
+    title: String?,
+    modifier: Modifier = Modifier
+) {
+    val initial = (title?.firstOrNull { it.isLetterOrDigit() } ?: 'P').uppercaseChar()
+    val gradientColors = remember(title) {
+        val hash = (title?.hashCode() ?: 42).let { if (it < 0) -it else it }
+        val palettes = listOf(
+            listOf(Color(0xFF1E3A8A), Color(0xFF0F172A)),
+            listOf(Color(0xFF065F46), Color(0xFF022C22)),
+            listOf(Color(0xFF581C87), Color(0xFF1E1B4B)),
+            listOf(Color(0xFF7C2D12), Color(0xFF1C1917)),
+            listOf(Color(0xFF134E4A), Color(0xFF042F2E)),
+            listOf(Color(0xFF831843), Color(0xFF1F121E))
+        )
+        palettes[hash % palettes.size]
+    }
+
+    Box(
+        modifier = modifier
+            .background(Brush.linearGradient(gradientColors)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Podcasts,
+                contentDescription = null,
+                tint = CyberGreen.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = initial.toString(),
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -915,12 +957,11 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
                     .height(130.dp)
                     .background(BorderGray)
             ) {
-                AsyncImage(
-                    model = podcast.coverUrl,
+                SmartPodcastImage(
+                    imageUrl = podcast.coverUrl,
                     contentDescription = podcast.title,
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    error = null // Falls back to geometric card if offline
+                    contentScale = ContentScale.Crop
                 )
 
                 // Render a neat geometric art fallback if image fails or is empty
@@ -1017,8 +1058,14 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
         }
         .sortedWith { ep1, ep2 ->
             when (sortOrder) {
-                EpisodeSortOrder.NEWEST -> ep2.getEffectiveTimestamp().compareTo(ep1.getEffectiveTimestamp())
-                EpisodeSortOrder.OLDEST -> ep1.getEffectiveTimestamp().compareTo(ep2.getEffectiveTimestamp())
+                EpisodeSortOrder.NEWEST -> {
+                    val cmp = ep2.getEffectiveTimestamp().compareTo(ep1.getEffectiveTimestamp())
+                    if (cmp != 0) cmp else ep2.publishDate.compareTo(ep1.publishDate)
+                }
+                EpisodeSortOrder.OLDEST -> {
+                    val cmp = ep1.getEffectiveTimestamp().compareTo(ep2.getEffectiveTimestamp())
+                    if (cmp != 0) cmp else ep1.publishDate.compareTo(ep2.publishDate)
+                }
                 EpisodeSortOrder.DURATION_DESC -> ep2.durationSeconds.compareTo(ep1.durationSeconds)
                 EpisodeSortOrder.DURATION_ASC -> ep1.durationSeconds.compareTo(ep2.durationSeconds)
             }
@@ -1133,8 +1180,8 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
                         .clip(RoundedCornerShape(12.dp))
                         .background(BorderGray)
                 ) {
-                    AsyncImage(
-                        model = podcast.coverUrl,
+                    SmartPodcastImage(
+                        imageUrl = podcast.coverUrl,
                         contentDescription = podcast.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
@@ -1967,8 +2014,8 @@ fun VerlaufEpisodeCard(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 // Cover Image
-                AsyncImage(
-                    model = item.podcastImageUrl,
+                SmartPodcastImage(
+                    imageUrl = item.podcastImageUrl,
                     contentDescription = item.podcastTitle,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
@@ -2183,9 +2230,9 @@ fun EpisodeListItem(
                         .clip(RoundedCornerShape(8.dp))
                         .background(colors.itemBorder)
                 ) {
-                    AsyncImage(
-                        model = episode.podcastCoverUrl,
-                        contentDescription = null,
+                    SmartPodcastImage(
+                        imageUrl = episode.podcastCoverUrl,
+                        contentDescription = episode.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
@@ -2362,8 +2409,8 @@ fun SearchResultCard(
                     .clip(RoundedCornerShape(8.dp))
                     .background(colors.itemBorder)
             ) {
-                AsyncImage(
-                    model = result.coverUrl,
+                SmartPodcastImage(
+                    imageUrl = result.coverUrl,
                     contentDescription = result.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -2492,9 +2539,9 @@ fun MiniPlayerSection(
                         .clip(RoundedCornerShape(6.dp))
                         .background(BorderGray)
                 ) {
-                    AsyncImage(
-                        model = episode.podcastCoverUrl,
-                        contentDescription = null,
+                    SmartPodcastImage(
+                        imageUrl = episode.podcastCoverUrl,
+                        contentDescription = episode.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )

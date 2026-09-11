@@ -7,6 +7,8 @@ on:
       - "v*"
   pull_request:
     branches: [ "main", "master" ]
+  release:
+    types: [published, created]
   workflow_dispatch:
     inputs:
       create_github_release:
@@ -43,6 +45,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
+          gradle-version: '9.3.1'
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Make Gradle executable
@@ -93,6 +96,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '9.3.1'
 
       - name: Restore Debug Keystore
         run: |
@@ -124,7 +129,11 @@ jobs:
     name: 🚀 Build & GitHub Release
     needs: [test-and-lint]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: |
+      always() &&
+      github.event_name != 'pull_request' &&
+      !cancelled() &&
+      (needs.test-and-lint.result == 'success' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
     permissions:
       contents: write
       packages: write
@@ -140,6 +149,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '9.3.1'
 
       - name: Restore Debug Keystore
         run: |
@@ -170,7 +181,9 @@ jobs:
           if [ -n "$APK_FILE" ]; then
             TAG_NAME="${{ github.event.inputs.release_tag }}"
             if [ -z "$TAG_NAME" ]; then
-              if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+              if [ -n "${{ github.event.release.tag_name }}" ]; then
+                TAG_NAME="${{ github.event.release.tag_name }}"
+              elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
                 TAG_NAME="${{ github.ref_name }}"
               else
                 VER_NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts | head -n 1 | tr -d ' ')
@@ -196,8 +209,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.event_name != 'pull_request'
         with:
-          tag_name: ${{ steps.prepare_apk.outputs.tag_name || 'v1.2.0' }}
-          name: "LabCast ${{ steps.prepare_apk.outputs.tag_name || 'v1.2.0' }}"
+          tag_name: ${{ steps.prepare_apk.outputs.tag_name || github.event.release.tag_name || 'v1.2.0' }}
+          name: "LabCast ${{ steps.prepare_apk.outputs.tag_name || github.event.release.name || 'v1.2.0' }}"
           draft: false
           prerelease: false
           generate_release_notes: true
