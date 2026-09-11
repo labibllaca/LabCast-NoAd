@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
+import com.example.data.getEffectiveTimestamp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -843,14 +846,15 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                 )
             }
 
-            val filteredEpisodes = if (isOfflineModeOnly) {
-                episodes.filter { it.isDownloaded }
-            } else if (selectedCategory == "All") {
-                episodes
-            } else {
-                val matchingPodIds = podcasts.filter { it.category.equals(selectedCategory, ignoreCase = true) }.map { it.id }
-                episodes.filter { it.podcastId in matchingPodIds }
+            val rawEpisodes: List<EpisodeEntity> = when {
+                isOfflineModeOnly -> episodes.filter { it.isDownloaded }
+                selectedCategory == "All" -> episodes
+                else -> {
+                    val matchingPodIds = podcasts.filter { it.category.equals(selectedCategory, ignoreCase = true) }.map { it.id }
+                    episodes.filter { it.podcastId in matchingPodIds }
+                }
             }
+            val filteredEpisodes = rawEpisodes.sortedByDescending { it.getEffectiveTimestamp() }
 
             if (filteredEpisodes.isEmpty()) {
                 item {
@@ -1013,8 +1017,8 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
         }
         .sortedWith { ep1, ep2 ->
             when (sortOrder) {
-                EpisodeSortOrder.NEWEST -> ep2.publishDate.compareTo(ep1.publishDate)
-                EpisodeSortOrder.OLDEST -> ep1.publishDate.compareTo(ep2.publishDate)
+                EpisodeSortOrder.NEWEST -> ep2.getEffectiveTimestamp().compareTo(ep1.getEffectiveTimestamp())
+                EpisodeSortOrder.OLDEST -> ep1.getEffectiveTimestamp().compareTo(ep2.getEffectiveTimestamp())
                 EpisodeSortOrder.DURATION_DESC -> ep2.durationSeconds.compareTo(ep1.durationSeconds)
                 EpisodeSortOrder.DURATION_ASC -> ep1.durationSeconds.compareTo(ep2.durationSeconds)
             }
@@ -2623,6 +2627,7 @@ fun FullPlayerScreen(
 
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showTranscriptSheet by remember { mutableStateOf(false) }
+    var showDescriptionSheet by remember { mutableStateOf(false) }
 
     if (episode == null) return
 
@@ -2681,6 +2686,35 @@ fun FullPlayerScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Show Notes / Description button in header
+                    Surface(
+                        onClick = { showDescriptionSheet = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = DarkCharcoal,
+                        border = BorderStroke(1.dp, BorderGray),
+                        modifier = Modifier.testTag("player_notes_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "Show Notes",
+                                tint = TextGray,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Notes",
+                                color = TextWhite,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
                     // Chapters button in header
                     Surface(
                         onClick = { showChaptersSheet = true },
@@ -3265,6 +3299,169 @@ fun FullPlayerScreen(
                     showTranscriptSheet = false
                 },
                 onDismiss = { showTranscriptSheet = false }
+            )
+        }
+
+        // Episode Description & Metadata Details Modal Bottom Sheet
+        if (showDescriptionSheet) {
+            EpisodeDescriptionBottomSheet(
+                episode = episode!!,
+                onRefreshMetadata = {
+                    viewModel.refreshEpisodeMetadataNow(episode!!)
+                },
+                onDismiss = { showDescriptionSheet = false }
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EpisodeDescriptionBottomSheet(
+    episode: EpisodeEntity,
+    onRefreshMetadata: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = ObsidianBlack,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = BorderGray)
+        },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag("episode_description_bottom_sheet")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "EPISODE NOTES & DETAILS",
+                            color = TextWhite,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = episode.podcastTitle,
+                        color = CyberGreenGlow,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("close_description_sheet")
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextGray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = episode.title,
+                color = TextWhite,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 23.sp
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Metadata info badges & manual refresh trigger
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = DarkCharcoal,
+                    border = BorderStroke(1.dp, BorderGray)
+                ) {
+                    Text(
+                        text = episode.publishDate,
+                        color = TextGray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = DarkCharcoal,
+                    border = BorderStroke(1.dp, BorderGray)
+                ) {
+                    val m = episode.durationSeconds / 60
+                    val s = episode.durationSeconds % 60
+                    Text(
+                        text = "${m}m ${s}s",
+                        color = TextGray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = onRefreshMetadata,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.6f)),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                    modifier = Modifier.height(28.dp).testTag("sync_metadata_button")
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Sync",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Sync Feed",
+                        color = CyberGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(color = BorderGray.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = episode.description.ifEmpty { "No show notes available for this episode." },
+                color = TextWhite.copy(alpha = 0.85f),
+                fontSize = 14.sp,
+                lineHeight = 22.sp
             )
         }
     }

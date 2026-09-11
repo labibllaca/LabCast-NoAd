@@ -26,13 +26,13 @@ interface PodcastDao {
     @Query("DELETE FROM episodes WHERE podcastId = :podcastId")
     suspend fun deleteEpisodesForPodcast(podcastId: String)
 
-    @Query("SELECT * FROM episodes")
+    @Query("SELECT * FROM episodes ORDER BY publishTimestamp DESC, publishDate DESC")
     fun getAllEpisodes(): Flow<List<EpisodeEntity>>
 
-    @Query("SELECT * FROM episodes WHERE podcastId = :podcastId ORDER BY publishDate DESC")
+    @Query("SELECT * FROM episodes WHERE podcastId = :podcastId ORDER BY publishTimestamp DESC, publishDate DESC")
     fun getEpisodesForPodcast(podcastId: String): Flow<List<EpisodeEntity>>
 
-    @Query("SELECT * FROM episodes WHERE isDownloaded = 1")
+    @Query("SELECT * FROM episodes WHERE isDownloaded = 1 ORDER BY publishTimestamp DESC, publishDate DESC")
     fun getDownloadedEpisodes(): Flow<List<EpisodeEntity>>
 
     @Query("SELECT * FROM episodes WHERE id = :id")

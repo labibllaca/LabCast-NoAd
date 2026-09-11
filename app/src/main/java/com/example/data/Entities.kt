@@ -33,8 +33,14 @@ data class EpisodeEntity(
     val isFavorite: Boolean = false,
     val adTimestampsSeconds: String = "", // e.g. "45,210" for ads at 45s and 210s
     val chapters: String = "", // e.g. "0:Intro|120:Topic 1|480:Topic 2"
-    val transcript: String = "" // Timestamped podcast transcript content
+    val transcript: String = "", // Timestamped podcast transcript content
+    val publishTimestamp: Long = 0L
 )
+
+fun EpisodeEntity.getEffectiveTimestamp(): Long {
+    if (publishTimestamp > 0L) return publishTimestamp
+    return com.example.util.PodcastDateUtils.parseDateToTimestamp(publishDate)
+}
 
 @Entity(tableName = "sync_logs")
 data class SyncLogEntity(

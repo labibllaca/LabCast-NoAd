@@ -39,7 +39,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
     }
 
     suspend fun updateEpisode(episode: EpisodeEntity) {
-        podcastDao.updateEpisode(episode)
+        val ts = if (episode.publishTimestamp > 0L) episode.publishTimestamp else episode.getEffectiveTimestamp()
+        podcastDao.updateEpisode(episode.copy(publishTimestamp = ts))
     }
 
     suspend fun updatePodcast(podcast: PodcastEntity) {
@@ -51,7 +52,11 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
     }
 
     suspend fun insertEpisodes(episodes: List<EpisodeEntity>) {
-        podcastDao.insertEpisodes(episodes)
+        val withTimestamps = episodes.map { ep ->
+            val ts = if (ep.publishTimestamp > 0L) ep.publishTimestamp else ep.getEffectiveTimestamp()
+            ep.copy(publishTimestamp = ts)
+        }.sortedByDescending { it.publishTimestamp }
+        podcastDao.insertEpisodes(withTimestamps)
     }
 
     suspend fun addSyncLog(deviceName: String, action: String) {

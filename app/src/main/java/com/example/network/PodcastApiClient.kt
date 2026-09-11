@@ -29,7 +29,16 @@ data class FeedEpisode(
     val audioUrl: String,
     val adTimestampsSeconds: String = "",
     val chapters: String = "",
-    val transcript: String = ""
+    val transcript: String = "",
+    val publishTimestamp: Long = 0L
+)
+
+data class EnrichedEpisodeMetadata(
+    val description: String,
+    val chapters: String,
+    val adTimestampsSeconds: String,
+    val transcript: String,
+    val durationSeconds: Long
 )
 
 enum class PodcastSource(val displayName: String, val badgeColorHex: Long) {
@@ -130,26 +139,39 @@ object PodcastApiClient {
         }
     }
 
+    private val feedCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
+
+    private fun getOrFetchFeedXml(feedUrl: String): String? {
+        if (feedUrl.isBlank() || !feedUrl.startsWith("http")) return null
+        val now = System.currentTimeMillis()
+        val cached = feedCache[feedUrl]
+        if (cached != null && (now - cached.first) < 5 * 60 * 1000L) {
+            return cached.second
+        }
+        return try {
+            val request = Request.Builder()
+                .url(feedUrl)
+                .header("User-Agent", "LabCast/1.0 (Android)")
+                .build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val xml = response.body?.string()
+                if (!xml.isNullOrEmpty()) {
+                    feedCache[feedUrl] = Pair(now, xml)
+                    xml
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun fetchEpisodesForFeed(feedUrl: String, podcastTitle: String): List<FeedEpisode> {
         val episodes = mutableListOf<FeedEpisode>()
 
-        if (feedUrl.isNotEmpty() && feedUrl.startsWith("http")) {
-            try {
-                val request = Request.Builder()
-                    .url(feedUrl)
-                    .header("User-Agent", "LabCast/1.0 (Android)")
-                    .build()
-
-                val response = client.newCall(request).execute()
-                if (response.isSuccessful) {
-                    val xml = response.body?.string()
-                    if (!xml.isNullOrEmpty()) {
-                        episodes.addAll(parseRssFeed(xml))
-                    }
-                }
-            } catch (e: Exception) {
-                // Parse fallback
-            }
+        val xml = getOrFetchFeedXml(feedUrl)
+        if (!xml.isNullOrEmpty()) {
+            episodes.addAll(parseRssFeed(xml))
         }
 
         // If RSS was empty or blocked by CORS/timeout, generate clean high-quality structured episodes for the show
@@ -157,7 +179,82 @@ object PodcastApiClient {
             episodes.addAll(CuratedPodcastCatalog.generateEpisodesForShow(podcastTitle))
         }
 
+        episodes.sortByDescending { it.publishTimestamp }
         return episodes
+    }
+
+    suspend fun fetchEnrichedMetadataForEpisode(
+        feedUrl: String,
+        episodeTitle: String,
+        audioUrl: String,
+        durationSeconds: Long
+    ): EnrichedEpisodeMetadata? {
+        val xml = getOrFetchFeedXml(feedUrl) ?: return null
+        try {
+            val itemRegex = Regex("<item>(.*?)</item>", RegexOption.DOT_MATCHES_ALL)
+            val titleRegex = Regex("<title><!\\[CDATA\\[(.*?)\\]\\]></title>|<title>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
+            val descRegex = Regex("<description><!\\[CDATA\\[(.*?)\\]\\]></description>|<description>(.*?)</description>", RegexOption.DOT_MATCHES_ALL)
+            val contentEncodedRegex = Regex("<content:encoded><!\\[CDATA\\[(.*?)\\]\\]></content:encoded>|<content:encoded>(.*?)</content:encoded>", RegexOption.DOT_MATCHES_ALL)
+            val enclosureRegex = Regex("<enclosure[^>]*url=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+
+            val cleanTargetTitle = cleanHtml(episodeTitle).lowercase()
+            val audioKey = audioUrl.substringBefore("?").substringAfterLast("/")
+
+            for (match in itemRegex.findAll(xml)) {
+                val itemBlock = match.groupValues[1]
+                val itemAudio = enclosureRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
+                val itemTitle = cleanHtml(
+                    titleRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value } ?: ""
+                ).lowercase()
+
+                val matchesAudio = audioKey.isNotEmpty() && itemAudio.contains(audioKey)
+                val matchesTitle = itemTitle.isNotEmpty() && (itemTitle == cleanTargetTitle || itemTitle.contains(cleanTargetTitle) || cleanTargetTitle.contains(itemTitle))
+
+                if (matchesAudio || matchesTitle) {
+                    // Found matching feed item! Extract richest description and full metadata
+                    val contentEncoded = contentEncodedRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
+                    val descMatch = descRegex.find(itemBlock)?.let { it.groups[1]?.value ?: it.groups[2]?.value }
+                    val rawDesc = contentEncoded ?: descMatch ?: ""
+                    val richDesc = cleanHtml(rawDesc)
+
+                    val parsedChapters = com.example.data.ChapterParser.parseFromFeedItem(itemBlock, durationSeconds)
+                    val chaptersStr = if (parsedChapters.isNotEmpty()) {
+                        com.example.data.ChapterParser.toPipeString(parsedChapters)
+                    } else ""
+
+                    val transcriptRegex = Regex("<(?:podcast:transcript|transcript)[^>]*url=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
+                    val transcriptUrl = transcriptRegex.find(itemBlock)?.groups?.get(1)?.value
+
+                    var transcriptStr = ""
+                    if (!transcriptUrl.isNullOrEmpty()) {
+                        try {
+                            val req = Request.Builder().url(transcriptUrl).build()
+                            val resp = client.newCall(req).execute()
+                            if (resp.isSuccessful) {
+                                val body = resp.body?.string() ?: ""
+                                val parsedSegs = com.example.data.TranscriptParser.parseOrGenerateTranscript(
+                                    rawTranscript = body,
+                                    episodeTitle = episodeTitle,
+                                    episodeDescription = richDesc,
+                                    durationSeconds = durationSeconds,
+                                    chapters = parsedChapters
+                                )
+                                transcriptStr = parsedSegs.joinToString("\n") { "${it.formattedTime()} [${it.speaker}] ${it.text}" }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    return EnrichedEpisodeMetadata(
+                        description = richDesc,
+                        chapters = chaptersStr,
+                        adTimestampsSeconds = "45,${durationSeconds / 2}",
+                        transcript = transcriptStr,
+                        durationSeconds = durationSeconds
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+        return null
     }
 
     private fun parseRssFeed(xml: String): List<FeedEpisode> {
@@ -169,10 +266,10 @@ object PodcastApiClient {
             val descRegex = Regex("<description><!\\[CDATA\\[(.*?)\\]\\]></description>|<description>(.*?)</description>", RegexOption.DOT_MATCHES_ALL)
             val contentEncodedRegex = Regex("<content:encoded><!\\[CDATA\\[(.*?)\\]\\]></content:encoded>|<content:encoded>(.*?)</content:encoded>", RegexOption.DOT_MATCHES_ALL)
             val enclosureRegex = Regex("<enclosure[^>]*url=[\"']([^\"']+)[\"'][^>]*>", RegexOption.IGNORE_CASE)
-            val pubDateRegex = Regex("<pubDate>(.*?)</pubDate>", RegexOption.IGNORE_CASE)
+            val pubDateRegex = Regex("<(?:pubDate|dc:date|published|updated)>(.*?)</(?:pubDate|dc:date|published|updated)>", RegexOption.IGNORE_CASE)
             val durationRegex = Regex("<itunes:duration>(.*?)</itunes:duration>", RegexOption.IGNORE_CASE)
 
-            val matches = itemRegex.findAll(xml).take(20)
+            val matches = itemRegex.findAll(xml).take(25)
             var index = 1
             for (match in matches) {
                 val itemBlock = match.groupValues[1]
@@ -188,7 +285,8 @@ object PodcastApiClient {
                 val cleanDesc = cleanHtml(rawDesc).take(4000)
 
                 val audioUrl = enclosureRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
-                val pubDate = pubDateRegex.find(itemBlock)?.groups?.get(1)?.value?.take(16) ?: "Recent"
+                val rawPubDate = pubDateRegex.find(itemBlock)?.groups?.get(1)?.value ?: ""
+                val (cleanPubDate, timestampMs) = com.example.util.PodcastDateUtils.parseAndFormat(rawPubDate)
 
                 val durationStr = durationRegex.find(itemBlock)?.groups?.get(1)?.value ?: "1800"
                 val durationSec = parseDurationToSeconds(durationStr)
@@ -226,11 +324,12 @@ object PodcastApiClient {
                         title = cleanTitle,
                         description = cleanDesc,
                         durationSeconds = durationSec,
-                        publishDate = pubDate,
+                        publishDate = cleanPubDate,
                         audioUrl = audioUrl,
                         adTimestampsSeconds = "45,${durationSec / 2}",
                         chapters = chaptersPipeString,
-                        transcript = transcriptFormatted
+                        transcript = transcriptFormatted,
+                        publishTimestamp = timestampMs
                     )
                 )
                 index++
@@ -238,6 +337,7 @@ object PodcastApiClient {
         } catch (e: Exception) {
             // ignore
         }
+        list.sortByDescending { it.publishTimestamp }
         return list
     }
 
@@ -481,17 +581,20 @@ object CuratedPodcastCatalog {
                 "${seg.formattedTime()} [${seg.speaker}] ${seg.text}"
             }
 
+            val dateStr = "2026-09-0${(7 - i).coerceAtLeast(1)}"
+            val ts = com.example.util.PodcastDateUtils.parseDateToTimestamp(dateStr)
             FeedEpisode(
                 id = "${showTitle.hashCode().toString().replace("-", "p")}_ep_$i",
                 title = epTitle,
                 description = epDesc,
                 durationSeconds = duration,
-                publishDate = "2026-09-0${(7 - i).coerceAtLeast(1)}",
+                publishDate = dateStr,
                 audioUrl = audio,
                 adTimestampsSeconds = "30,${duration / 2}",
                 chapters = chs,
-                transcript = transcriptStr
+                transcript = transcriptStr,
+                publishTimestamp = ts
             )
-        }
+        }.sortedByDescending { it.publishTimestamp }
     }
 }

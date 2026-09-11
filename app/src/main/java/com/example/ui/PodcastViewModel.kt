@@ -440,14 +440,15 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
                     val mergedEpisodes = fetched.map { f ->
                         val prev = existingMap[f.id] ?: existing.firstOrNull { it.title.equals(f.title, ignoreCase = true) }
+                        val ts = if (f.publishTimestamp > 0L) f.publishTimestamp else com.example.util.PodcastDateUtils.parseDateToTimestamp(f.publishDate)
                         EpisodeEntity(
                             id = prev?.id ?: f.id,
                             podcastId = podcast.id,
                             podcastTitle = podcast.title,
                             podcastCoverUrl = podcast.coverUrl,
                             title = f.title,
-                            description = f.description,
-                            durationSeconds = f.durationSeconds,
+                            description = if (f.description.length >= (prev?.description?.length ?: 0)) f.description else (prev?.description ?: f.description),
+                            durationSeconds = if (f.durationSeconds > 0) f.durationSeconds else (prev?.durationSeconds ?: 1800L),
                             publishDate = f.publishDate,
                             audioUrl = f.audioUrl,
                             isDownloaded = prev?.isDownloaded ?: false,
@@ -455,10 +456,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                             playbackPositionMs = prev?.playbackPositionMs ?: 0L,
                             isCompleted = prev?.isCompleted ?: false,
                             isFavorite = prev?.isFavorite ?: false,
-                            adTimestampsSeconds = f.adTimestampsSeconds,
-                            chapters = f.chapters
+                            adTimestampsSeconds = f.adTimestampsSeconds.ifEmpty { prev?.adTimestampsSeconds ?: "" },
+                            chapters = f.chapters.ifEmpty { prev?.chapters ?: "" },
+                            transcript = f.transcript.ifEmpty { prev?.transcript ?: "" },
+                            publishTimestamp = ts
                         )
-                    }
+                    }.sortedByDescending { it.publishTimestamp }
 
                     repository.insertEpisodes(mergedEpisodes)
 
@@ -480,6 +483,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    private var metadataRefreshJob: kotlinx.coroutines.Job? = null
+
     // Media Player control
     fun playEpisode(episode: EpisodeEntity, openPlayer: Boolean = true) {
         if (openPlayer) {
@@ -494,38 +499,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
 
             var currentEp = episode
-
-            // Ensure metadata (chapters, ad timestamps) & generate episode transcript every time playback starts
-            val parsedChaps = ChapterParser.parseChapters(currentEp.chapters, currentEp.description, currentEp.durationSeconds)
-            if (currentEp.chapters.isEmpty() && parsedChaps.isNotEmpty()) {
-                val pipeStr = ChapterParser.toPipeString(parsedChaps)
-                currentEp = currentEp.copy(chapters = pipeStr)
-            }
-
-            if (currentEp.transcript.isEmpty()) {
-                val generatedTranscript = TranscriptParser.parseOrGenerateTranscript(
-                    rawTranscript = null,
-                    episodeTitle = currentEp.title,
-                    episodeDescription = currentEp.description,
-                    durationSeconds = currentEp.durationSeconds,
-                    chapters = parsedChaps
-                )
-                val transcriptText = generatedTranscript.joinToString("\n") { "[${it.formattedTime()}] ${it.speaker}: ${it.text}" }
-                currentEp = currentEp.copy(transcript = transcriptText)
-            }
-            repository.updateEpisode(currentEp)
-
             _currentPlayingEpisode.value = currentEp
             _playbackPositionMs.value = currentEp.playbackPositionMs
             _isAdActive.value = false
             _isPlaying.value = true
-
-            // Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
-            val (waveform, detectedAcousticAds) = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds)
-            _waveformAmplitudes.value = waveform
-            _acousticAdSegments.value = detectedAcousticAds
-            lastSkippedAcousticAdId = null
-            _lastAcousticAdAlert.value = null
 
             // Determine playback target: prioritize verified offline download
             val localPath = currentEp.downloadLocalPath
@@ -548,6 +525,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 currentEp.audioUrl
             }
 
+            // Start audio IMMEDIATELY for zero lag & maximum efficacy
             audioManager.play(audioTarget, currentEp.playbackPositionMs)
             audioManager.onCompletionListener = {
                 handleEpisodeCompletion()
@@ -559,7 +537,94 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             checkSponsorAndAdDetection(currentEp.playbackPositionMs)
 
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${currentEp.title}'")
+
+            // UPDATE METADATA AFTERWARDS (Description, Chapters, Transcript, Acoustic DAI Waveform)
+            refreshMetadataAfterwards(currentEp)
         }
+    }
+
+    private fun refreshMetadataAfterwards(episode: EpisodeEntity) {
+        metadataRefreshJob?.cancel()
+        metadataRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                var currentEp = episode
+
+                // 1. Fetch updated rich metadata from RSS feed if online
+                val podcast = repository.getPodcastById(currentEp.podcastId)
+                if (!_isOfflineModeOnly.value && podcast != null && podcast.feedUrl.startsWith("http")) {
+                    val enriched = PodcastApiClient.fetchEnrichedMetadataForEpisode(
+                        feedUrl = podcast.feedUrl,
+                        episodeTitle = currentEp.title,
+                        audioUrl = currentEp.audioUrl,
+                        durationSeconds = currentEp.durationSeconds
+                    )
+                    if (enriched != null) {
+                        var newDesc = currentEp.description
+                        if (enriched.description.isNotBlank() && enriched.description.length > currentEp.description.length) {
+                            newDesc = enriched.description
+                        }
+                        var newChaps = currentEp.chapters
+                        if (enriched.chapters.isNotBlank()) {
+                            newChaps = enriched.chapters
+                        }
+                        var newTranscript = currentEp.transcript
+                        if (enriched.transcript.isNotBlank()) {
+                            newTranscript = enriched.transcript
+                        }
+                        currentEp = currentEp.copy(
+                            description = newDesc,
+                            chapters = newChaps,
+                            transcript = newTranscript,
+                            adTimestampsSeconds = if (enriched.adTimestampsSeconds.isNotBlank()) enriched.adTimestampsSeconds else currentEp.adTimestampsSeconds
+                        )
+                    }
+                }
+
+                // 2. Parse chapters from updated description if chapters empty
+                val parsedChaps = ChapterParser.parseChapters(currentEp.chapters, currentEp.description, currentEp.durationSeconds)
+                if (currentEp.chapters.isEmpty() && parsedChaps.isNotEmpty()) {
+                    val pipeStr = ChapterParser.toPipeString(parsedChaps)
+                    currentEp = currentEp.copy(chapters = pipeStr)
+                }
+
+                // 3. Ensure rich transcript exists
+                if (currentEp.transcript.isEmpty()) {
+                    val generatedTranscript = TranscriptParser.parseOrGenerateTranscript(
+                        rawTranscript = null,
+                        episodeTitle = currentEp.title,
+                        episodeDescription = currentEp.description,
+                        durationSeconds = currentEp.durationSeconds,
+                        chapters = parsedChaps
+                    )
+                    val transcriptText = generatedTranscript.joinToString("\n") { "[${it.formattedTime()}] ${it.speaker}: ${it.text}" }
+                    currentEp = currentEp.copy(transcript = transcriptText)
+                }
+
+                // 4. Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
+                val (waveform, detectedAcousticAds) = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds)
+                withContext(Dispatchers.Main) {
+                    _waveformAmplitudes.value = waveform
+                    _acousticAdSegments.value = detectedAcousticAds
+                }
+
+                // 5. Save updated metadata to database
+                repository.updateEpisode(currentEp)
+
+                // 6. Update current playing episode state if still active
+                withContext(Dispatchers.Main) {
+                    if (_currentPlayingEpisode.value?.id == currentEp.id) {
+                        _currentPlayingEpisode.value = currentEp
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("PodcastPlayer", "Metadata refresh afterwards error: ${e.message}", e)
+            }
+        }
+    }
+
+    fun refreshEpisodeMetadataNow(episode: EpisodeEntity) {
+        refreshMetadataAfterwards(episode)
+        _sponsorSkipEvent.value = "Updating episode description, chapters & transcript..."
     }
 
     fun togglePlayPause() {
@@ -801,6 +866,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val episodeEntities = feedEpisodes.map { ep ->
+                val ts = if (ep.publishTimestamp > 0L) ep.publishTimestamp else com.example.util.PodcastDateUtils.parseDateToTimestamp(ep.publishDate)
                 EpisodeEntity(
                     id = ep.id,
                     podcastId = result.id,
@@ -813,9 +879,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     audioUrl = ep.audioUrl,
                     isDownloaded = false,
                     adTimestampsSeconds = ep.adTimestampsSeconds,
-                    chapters = ep.chapters
+                    chapters = ep.chapters,
+                    transcript = ep.transcript,
+                    publishTimestamp = ts
                 )
-            }
+            }.sortedByDescending { it.publishTimestamp }
 
             if (episodeEntities.isNotEmpty()) {
                 repository.insertEpisodes(episodeEntities)
