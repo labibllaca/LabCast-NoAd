@@ -174,7 +174,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _sttConfidenceScore = MutableStateFlow(0f)
     val sttConfidenceScore: StateFlow<Float> = _sttConfidenceScore.asStateFlow()
 
-    // Dictionary of recognized ad / commercial keywords across languages
     private val adKeywordDictionary = listOf(
         "werbung", "werbepartner", "sponsor", "sponsorship", "sponsored by",
         "brought to you by", "discount code", "promo code", "promocode", "special offer",
@@ -186,7 +185,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun toggleSttScanner() {
         _isSttScanning.value = !_isSttScanning.value
         if (_isSttScanning.value) {
-            _sponsorSkipEvent.value = "Speech-to-Text STT Scanner Activated: Monitoring audio speech for ad words"
+            _sponsorSkipEvent.value = "Speech-to-Text STT Scanner Aktiviert"
             scanSpeechTextForAds("This episode is sponsored by AG1 and BetterHelp. Use promo code PODCAST for a special discount offer.")
         } else {
             _sttMatchedKeywords.value = emptyList()
@@ -206,15 +205,19 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             val score = (matched.size * 0.35f + 0.30f).coerceAtMost(0.98f)
             _sttConfidenceScore.value = score
             if (_isAutoAdSkipEnabled.value) {
-                _sponsorSkipEvent.value = "STT Ad Keyword Match Detected: Found ${matched.joinToString(", ")}"
+                _sponsorSkipEvent.value = "STT Ad Keyword erkannt: ${matched.joinToString(", ")}"
             }
         } else {
             _sttConfidenceScore.value = 0.05f
         }
     }
 
-    // Theme Mode (Dark, Light, System)
-    private val _themeMode = MutableStateFlow(com.example.ui.theme.AppThemeMode.DARK)
+    // Transcript refresh state
+    private val _isTranscriptRefreshing = MutableStateFlow(false)
+    val isTranscriptRefreshing: StateFlow<Boolean> = _isTranscriptRefreshing.asStateFlow()
+
+    // Theme Mode (System Default, Dark, Light)
+    private val _themeMode = MutableStateFlow(com.example.ui.theme.AppThemeMode.SYSTEM)
     val themeMode: StateFlow<com.example.ui.theme.AppThemeMode> = _themeMode.asStateFlow()
 
     fun setThemeMode(mode: com.example.ui.theme.AppThemeMode) {
@@ -616,30 +619,17 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     currentEp = currentEp.copy(chapters = pipeStr)
                 }
 
-                // 3. Ensure rich transcript exists
-                if (currentEp.transcript.isEmpty()) {
-                    val generatedTranscript = TranscriptParser.parseOrGenerateTranscript(
-                        rawTranscript = null,
-                        episodeTitle = currentEp.title,
-                        episodeDescription = currentEp.description,
-                        durationSeconds = currentEp.durationSeconds,
-                        chapters = parsedChaps
-                    )
-                    val transcriptText = generatedTranscript.joinToString("\n") { "[${it.formattedTime()}] ${it.speaker}: ${it.text}" }
-                    currentEp = currentEp.copy(transcript = transcriptText)
-                }
-
-                // 4. Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
+                // 3. Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
                 val (waveform, detectedAcousticAds) = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds)
                 withContext(Dispatchers.Main) {
                     _waveformAmplitudes.value = waveform
                     _acousticAdSegments.value = detectedAcousticAds
                 }
 
-                // 5. Save updated metadata to database
+                // 4. Save updated metadata to database
                 repository.updateEpisode(currentEp)
 
-                // 6. Update current playing episode state if still active
+                // 5. Update current playing episode state if still active
                 withContext(Dispatchers.Main) {
                     if (_currentPlayingEpisode.value?.id == currentEp.id) {
                         _currentPlayingEpisode.value = currentEp
@@ -653,7 +643,50 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshEpisodeMetadataNow(episode: EpisodeEntity) {
         refreshMetadataAfterwards(episode)
-        _sponsorSkipEvent.value = "Updating episode description, chapters & transcript..."
+        _sponsorSkipEvent.value = "Aktualisiere Episoden-Metadaten & Feed..."
+    }
+
+    fun refreshCurrentEpisodeTranscript() {
+        val current = _currentPlayingEpisode.value ?: return
+        viewModelScope.launch {
+            _isTranscriptRefreshing.value = true
+            try {
+                val podcast = repository.getPodcastById(current.podcastId)
+                val feedUrl = when {
+                    podcast != null && podcast.feedUrl.isNotBlank() -> podcast.feedUrl
+                    current.podcastId.contains("huberman", ignoreCase = true) -> "https://feeds.megaphone.fm/hubermanlab"
+                    else -> ""
+                }
+
+                if (!_isOfflineModeOnly.value && feedUrl.startsWith("http")) {
+                    val enriched = withContext(Dispatchers.IO) {
+                        PodcastApiClient.fetchEnrichedMetadataForEpisode(
+                            feedUrl = feedUrl,
+                            episodeTitle = current.title,
+                            audioUrl = current.audioUrl,
+                            durationSeconds = current.durationSeconds
+                        )
+                    }
+
+                    if (enriched != null && enriched.transcript.isNotBlank()) {
+                        val updated = current.copy(transcript = enriched.transcript)
+                        repository.updateEpisode(updated)
+                        _currentPlayingEpisode.value = updated
+                        _sponsorSkipEvent.value = "Transkript erfolgreich aus RSS-Feed geladen"
+                    } else {
+                        _sponsorSkipEvent.value = "Kein eingebettetes Skript/Transkript im Podcast-Feed gefunden"
+                    }
+                } else {
+                    _sponsorSkipEvent.value = if (_isOfflineModeOnly.value) "Offline-Modus aktiv: Keine Verbindung zum Feed" else "Keine Feed-URL für diesen Podcast verfügbar"
+                }
+            } catch (e: Exception) {
+                Log.e("PodcastPlayer", "Error refreshing transcript: ${e.message}", e)
+                _sponsorSkipEvent.value = "Fehler beim Laden des Transkripts: ${e.message}"
+            } finally {
+                delay(350)
+                _isTranscriptRefreshing.value = false
+            }
+        }
     }
 
     fun togglePlayPause() {

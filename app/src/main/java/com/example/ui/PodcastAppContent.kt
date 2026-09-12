@@ -3531,6 +3531,7 @@ fun TranscriptBottomSheet(
     val sttLiveText by viewModel.sttLiveText.collectAsStateWithLifecycle()
     val sttMatchedKeywords by viewModel.sttMatchedKeywords.collectAsStateWithLifecycle()
     val sttConfidenceScore by viewModel.sttConfidenceScore.collectAsStateWithLifecycle()
+    val isTranscriptRefreshing by viewModel.isTranscriptRefreshing.collectAsStateWithLifecycle()
 
     val filteredSegments = remember(transcriptSegments, searchQuery, filterSponsorsOnly) {
         transcriptSegments.filter { seg ->
@@ -3608,15 +3609,38 @@ fun TranscriptBottomSheet(
                     )
                 }
 
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.testTag("close_transcript_sheet")
-                ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = TextGray
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { viewModel.refreshCurrentEpisodeTranscript() },
+                        enabled = !isTranscriptRefreshing,
+                        modifier = Modifier.testTag("refresh_transcript_button")
+                    ) {
+                        if (isTranscriptRefreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = CyberGreen,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Refresh Transcript",
+                                tint = CyberGreen,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.testTag("close_transcript_sheet")
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = TextGray
+                        )
+                    }
                 }
             }
 
@@ -3739,76 +3763,14 @@ fun TranscriptBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Search & Ad Filter Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search transcript or sponsor strings...", color = TextGray, fontSize = 12.sp) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = CyberGreen,
-                        unfocusedBorderColor = BorderGray,
-                        focusedTextColor = TextWhite,
-                        unfocusedTextColor = TextWhite
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp)
-                        .testTag("input_transcript_search"),
-                    shape = RoundedCornerShape(12.dp),
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = TextGray,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                )
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                FilterChip(
-                    selected = filterSponsorsOnly,
-                    onClick = { filterSponsorsOnly = !filterSponsorsOnly },
-                    label = { Text("Ads Only", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.MonetizationOn,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = AdGold.copy(alpha = 0.25f),
-                        selectedLabelColor = AdGold,
-                        selectedLeadingIconColor = AdGold,
-                        containerColor = DarkCharcoal,
-                        labelColor = TextGray,
-                        iconColor = TextGray
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        borderColor = BorderGray,
-                        selectedBorderColor = AdGold,
-                        enabled = true,
-                        selected = filterSponsorsOnly
-                    ),
-                    modifier = Modifier.testTag("filter_ads_only_chip")
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            if (filteredSegments.isEmpty()) {
+            if (transcriptSegments.isEmpty()) {
+                // Clean empty state when episode has no transcript/script
                 Card(
                     colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp))
+                        .testTag("empty_transcript_card"),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -3817,29 +3779,168 @@ fun TranscriptBottomSheet(
                             .padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(
-                            Icons.Default.Subtitles,
-                            contentDescription = null,
-                            tint = TextGray,
-                            modifier = Modifier.size(36.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(ObsidianBlack, CircleShape)
+                                .border(1.dp, BorderGray, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Subtitles,
+                                contentDescription = null,
+                                tint = TextGray,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = "No Transcript Segments Found",
+                            text = "Kein Transkript vorhanden",
                             color = TextWhite,
-                            fontSize = 14.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Try clearing search keywords or switching off the 'Ads Only' filter.",
+                            text = "Für diese Episode ist kein Skript oder Untertitel im Podcast-Feed hinterlegt.",
                             color = TextGray,
                             fontSize = 12.sp,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            lineHeight = 17.sp
                         )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { viewModel.refreshCurrentEpisodeTranscript() },
+                            enabled = !isTranscriptRefreshing,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CyberGreen,
+                                contentColor = ObsidianBlack
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.testTag("btn_sync_transcript_empty")
+                        ) {
+                            if (isTranscriptRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = ObsidianBlack,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Wird geladen...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Transkript aktualisieren", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             } else {
+                // Search & Ad Filter Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Im Skript suchen...", color = TextGray, fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyberGreen,
+                            unfocusedBorderColor = BorderGray,
+                            focusedTextColor = TextWhite,
+                            unfocusedTextColor = TextWhite
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("input_transcript_search"),
+                        shape = RoundedCornerShape(12.dp),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = TextGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    FilterChip(
+                        selected = filterSponsorsOnly,
+                        onClick = { filterSponsorsOnly = !filterSponsorsOnly },
+                        label = { Text("Ads Only", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.MonetizationOn,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = AdGold.copy(alpha = 0.25f),
+                            selectedLabelColor = AdGold,
+                            selectedLeadingIconColor = AdGold,
+                            containerColor = DarkCharcoal,
+                            labelColor = TextGray,
+                            iconColor = TextGray
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            borderColor = BorderGray,
+                            selectedBorderColor = AdGold,
+                            enabled = true,
+                            selected = filterSponsorsOnly
+                        ),
+                        modifier = Modifier.testTag("filter_ads_only_chip")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (filteredSegments.isEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Default.SearchOff,
+                                contentDescription = null,
+                                tint = TextGray,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Keine passenden Zeilen gefunden",
+                                color = TextWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Überprüfe deine Suchbegriffe oder deaktiviere den Werbungsfilter.",
+                                color = TextGray,
+                                fontSize = 12.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
                 val currentSec = playbackPositionMs / 1000
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -3960,6 +4061,7 @@ fun TranscriptBottomSheet(
             }
         }
     }
+}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

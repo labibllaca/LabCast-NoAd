@@ -73,7 +73,7 @@ val LocalCustomColors = staticCompositionLocalOf {
 
 @Composable
 fun MyApplicationTheme(
-    themeMode: AppThemeMode = AppThemeMode.DARK,
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit,
 ) {
     val isDark = when (themeMode) {

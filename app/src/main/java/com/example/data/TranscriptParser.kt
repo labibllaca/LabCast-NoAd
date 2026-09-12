@@ -77,110 +77,39 @@ object TranscriptParser {
         }
     }
 
+    fun parseTranscript(
+        rawTranscript: String?,
+        safeDuration: Long = 1800L
+    ): List<TranscriptSegment> {
+        if (rawTranscript.isNullOrBlank()) {
+            return emptyList()
+        }
+
+        val parsedSegments = parseRawTranscriptLines(rawTranscript, safeDuration)
+        if (parsedSegments.isEmpty()) {
+            return emptyList()
+        }
+
+        val allZero = parsedSegments.size > 1 && parsedSegments.all { it.startTimeSeconds == 0L }
+        return if (allZero) {
+            val step = (safeDuration - 30L).coerceAtLeast(10L) / parsedSegments.size.coerceAtLeast(1)
+            parsedSegments.mapIndexed { index, seg ->
+                seg.copy(startTimeSeconds = index * step)
+            }
+        } else {
+            parsedSegments.sortedBy { it.startTimeSeconds }
+        }
+    }
+
     fun parseOrGenerateTranscript(
         rawTranscript: String?,
-        episodeTitle: String,
-        episodeDescription: String,
-        durationSeconds: Long,
+        episodeTitle: String = "",
+        episodeDescription: String = "",
+        durationSeconds: Long = 1800L,
         chapters: List<PodcastChapter> = emptyList()
     ): List<TranscriptSegment> {
         val safeDuration = if (durationSeconds > 0L) durationSeconds else 1800L
-
-        if (!rawTranscript.isNullOrBlank()) {
-            val parsedSegments = parseRawTranscriptLines(rawTranscript, safeDuration)
-            if (parsedSegments.isNotEmpty()) {
-                // If every single segment had timestamp 0 and there are multiple lines,
-                // intelligently distribute them along the episode length so timestamps are usable
-                val allZero = parsedSegments.size > 1 && parsedSegments.all { it.startTimeSeconds == 0L }
-                return if (allZero) {
-                    val step = (safeDuration - 30L).coerceAtLeast(10L) / parsedSegments.size.coerceAtLeast(1)
-                    parsedSegments.mapIndexed { index, seg ->
-                        seg.copy(startTimeSeconds = index * step)
-                    }
-                } else {
-                    parsedSegments.sortedBy { it.startTimeSeconds }
-                }
-            }
-        }
-
-        // Generate comprehensive structured transcript synchronized with episode chapters & description
-        val segments = mutableListOf<TranscriptSegment>()
-
-        // 1. Cold Open
-        segments.add(TranscriptSegment(0L, "Host", "Welcome back to $episodeTitle. Today we have a very special episode packed with actionable insights.", false))
-
-        // 2. Sponsor / Ad segment
-        val sponsorTime = (safeDuration * 0.12).toLong().coerceAtLeast(30L)
-        segments.add(
-            TranscriptSegment(
-                sponsorTime,
-                "Host [Sponsor Break]",
-                "This episode is brought to you by AG1 and LMNT. AG1 is your daily foundational nutrition drink to support gut health and energy. Use code PODCAST for 20% off your first order.",
-                isSponsor = true,
-                sponsorBrand = "AG1"
-            )
-        )
-
-        // 3. Discussion intro
-        val introTime = (safeDuration * 0.22).toLong().coerceAtLeast(90L)
-        val cleanDesc = episodeDescription.replace(Regex("<.*?>"), "").take(180)
-        segments.add(
-            TranscriptSegment(
-                introTime,
-                "Host",
-                "Diving right into today's main theme: $cleanDesc...",
-                false
-            )
-        )
-
-        // 4. Chapter based transcript lines
-        if (chapters.isNotEmpty()) {
-            for (ch in chapters) {
-                val isChSponsor = ch.isSponsorChapter() || isSponsorText(ch.title)
-                val brand = detectSponsorBrand(ch.title)
-                segments.add(
-                    TranscriptSegment(
-                        ch.startTimeSeconds,
-                        if (isChSponsor) "Host [Sponsor Segment]" else "Host",
-                        if (isChSponsor) "Sponsor partner spotlight: ${ch.title}. Visit our partner link in the show notes for exclusive promo discount codes." else "Chapter discussion: ${ch.title}. Exploring core mechanisms and practical applications.",
-                        isSponsor = isChSponsor,
-                        sponsorBrand = brand
-                    )
-                )
-            }
-        } else {
-            val midTime = safeDuration / 2
-            segments.add(
-                TranscriptSegment(
-                    (midTime - 60).coerceAtLeast(120L),
-                    "Host [Ad Break]",
-                    "Quick break for our sponsor: BetterHelp online therapy. Giving you tools to navigate stress and mental health. Use code PODCAST for a special discount.",
-                    isSponsor = true,
-                    sponsorBrand = "BetterHelp"
-                )
-            )
-            segments.add(
-                TranscriptSegment(
-                    (midTime + 60).coerceAtMost(safeDuration - 60L),
-                    "Guest / Co-Host",
-                    "Returning to the discussion, when you analyze these systems, consistency and baseline habits make all the difference.",
-                    false
-                )
-            )
-        }
-
-        // 5. Wrap up
-        val wrapTime = (safeDuration * 0.88).toLong().coerceAtLeast(safeDuration - 120).coerceAtLeast(0L)
-        segments.add(
-            TranscriptSegment(
-                wrapTime,
-                "Host",
-                "Thank you for listening to $episodeTitle. Make sure to subscribe, leave a 5-star review, and check out the show notes for all partner discount links.",
-                false
-            )
-        )
-
-        return segments.sortedBy { it.startTimeSeconds }
+        return parseTranscript(rawTranscript, safeDuration)
     }
 
     private fun parseRawTranscriptLines(rawTranscript: String, durationSeconds: Long): List<TranscriptSegment> {
