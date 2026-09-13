@@ -48,6 +48,13 @@ import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.data.EpisodeEntity
 import com.example.data.PodcastEntity
@@ -230,7 +237,8 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         MiniPlayerSection(
                             episode = episode,
                             viewModel = viewModel,
-                            onExpand = { viewModel.openPlayer() }
+                            onExpand = { viewModel.openPlayer() },
+                            onDismiss = { viewModel.stopAndDismissPlayer() }
                         )
                     }
                 }
@@ -2505,8 +2513,10 @@ fun SearchResultCard(
 fun MiniPlayerSection(
     episode: EpisodeEntity,
     viewModel: PodcastViewModel,
-    onExpand: () -> Unit
+    onExpand: () -> Unit,
+    onDismiss: () -> Unit = { viewModel.stopAndDismissPlayer() }
 ) {
+    val colors = LocalCustomColors.current
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val isBuffering by viewModel.isBuffering.collectAsStateWithLifecycle()
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
@@ -2515,135 +2525,221 @@ fun MiniPlayerSection(
     val durationMs = episode.durationSeconds * 1000f
     val progressFraction = if (durationMs > 0) playbackPositionMs / durationMs else 0f
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+    val coroutineScope = rememberCoroutineScope()
+    val offsetY = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { 45.dp.toPx() }
+    var isDismissing by remember { mutableStateOf(false) }
+
+    val draggableState = rememberDraggableState { delta ->
+        if (!isDismissing) {
+            val next = (offsetY.value + delta).coerceAtLeast(0f)
+            coroutineScope.launch {
+                offsetY.snapTo(next)
+            }
+        }
+    }
+
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .border(1.dp, if (isAdActive) AdGold else BorderGray, RoundedCornerShape(12.dp))
-            .clickable { onExpand() }
-            .testTag("mini_player"),
-        shape = RoundedCornerShape(12.dp)
+            .offset { IntOffset(0, offsetY.value.roundToInt().coerceAtLeast(0)) }
+            .alpha(if (isDismissing) 0f else (1f - (offsetY.value / (dismissThresholdPx * 2.5f))).coerceIn(0.15f, 1f))
+            .draggable(
+                state = draggableState,
+                orientation = Orientation.Vertical,
+                onDragStopped = { velocity ->
+                    if (offsetY.value > dismissThresholdPx || velocity > 300f) {
+                        isDismissing = true
+                        coroutineScope.launch {
+                            offsetY.animateTo(
+                                targetValue = 250f,
+                                animationSpec = tween(durationMillis = 150)
+                            )
+                            onDismiss()
+                        }
+                    } else {
+                        coroutineScope.launch {
+                            offsetY.animateTo(
+                                targetValue = 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium
+                                )
+                            )
+                        }
+                    }
+                }
+            )
+            .testTag("mini_player_container")
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Artwork
+        Card(
+            colors = CardDefaults.cardColors(containerColor = colors.miniPlayerBg),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .border(1.dp, if (isAdActive) AdGold else colors.itemBorder, RoundedCornerShape(12.dp))
+                .clickable { onExpand() }
+                .testTag("mini_player"),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column {
+                // Swipe down cue handle at top of mini player
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(BorderGray)
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    SmartPodcastImage(
-                        imageUrl = episode.podcastCoverUrl,
-                        contentDescription = episode.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                    Box(
+                        modifier = Modifier
+                            .width(32.dp)
+                            .height(3.dp)
+                            .clip(CircleShape)
+                            .background(colors.itemBorder.copy(alpha = 0.8f))
                     )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
-
-                // Metadata / Buffering / Ad Active
-                Column(modifier = Modifier.weight(1f)) {
-                    if (isBuffering) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(10.dp),
-                                color = CyberGreen,
-                                strokeWidth = 1.5.dp
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "BUFFERING STREAM...",
-                                color = CyberGreen,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    } else if (isAdActive) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(AdGold, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                "SPONSOR SEGMENT DETECTED",
-                                color = AdGold,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    }
-                    Text(
-                        text = episode.title,
-                        color = if (isAdActive) AdGold else TextWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = episode.podcastTitle,
-                        color = TextGray,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Controls inside mini player
-                if (isBuffering) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp).padding(2.dp),
-                        color = CyberGreen,
-                        strokeWidth = 2.dp
-                    )
-                } else if (isAdActive) {
-                    Button(
-                        onClick = { viewModel.skipAdManually() },
-                        colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
-                        shape = RoundedCornerShape(12.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp).testTag("mini_skip_ad_button")
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, end = 6.dp, top = 2.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Artwork
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.itemBorder)
                     ) {
-                        Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Skip Ad", fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        SmartPodcastImage(
+                            imageUrl = episode.podcastCoverUrl,
+                            contentDescription = episode.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
                     }
-                } else {
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    // Metadata / Buffering / Ad Active
+                    Column(modifier = Modifier.weight(1f)) {
+                        if (isBuffering) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(10.dp),
+                                    color = primaryAccent,
+                                    strokeWidth = 1.5.dp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "BUFFERING STREAM...",
+                                    color = primaryAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        } else if (isAdActive) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .background(AdGold, CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    "SPONSOR SEGMENT DETECTED",
+                                    color = AdGold,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                        }
+                        Text(
+                            text = episode.title,
+                            color = if (isAdActive) AdGold else colors.textPrimary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = episode.podcastTitle,
+                            color = colors.textMuted,
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Controls inside mini player
+                    if (isBuffering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).padding(2.dp),
+                            color = primaryAccent,
+                            strokeWidth = 2.dp
+                        )
+                    } else if (isAdActive) {
+                        Button(
+                            onClick = { viewModel.skipAdManually() },
+                            colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp).testTag("mini_skip_ad_button")
+                        ) {
+                            Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("Skip Ad", fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        }
+                    } else {
+                        IconButton(
+                            onClick = { viewModel.togglePlayPause() },
+                            modifier = Modifier.size(36.dp).testTag("mini_play_pause")
+                        ) {
+                            Icon(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = primaryAccent,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // Close icon button right beside play/pause to close player and stop audio
                     IconButton(
-                        onClick = { viewModel.togglePlayPause() },
-                        modifier = Modifier.size(36.dp).testTag("mini_play_pause")
+                        onClick = {
+                            isDismissing = true
+                            coroutineScope.launch {
+                                offsetY.animateTo(targetValue = 250f, animationSpec = tween(150))
+                                onDismiss()
+                            }
+                        },
+                        modifier = Modifier.size(32.dp).testTag("mini_close_player")
                     ) {
                         Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = CyberGreen,
-                            modifier = Modifier.size(24.dp)
+                            Icons.Default.Close,
+                            contentDescription = "Close and Stop Player",
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
-            }
 
-            // Bottom edge slim progress bar
-            LinearProgressIndicator(
-                progress = { progressFraction.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp),
-                color = if (isAdActive) AdGold else CyberGreen,
-                trackColor = BorderGray
-            )
+                // Bottom edge slim progress bar
+                LinearProgressIndicator(
+                    progress = { progressFraction.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp),
+                    color = if (isAdActive) AdGold else primaryAccent,
+                    trackColor = colors.itemBorder
+                )
+            }
         }
     }
 }
@@ -2656,6 +2752,12 @@ fun FullPlayerScreen(
     viewModel: PodcastViewModel,
     onCollapse: () -> Unit
 ) {
+    val colors = LocalCustomColors.current
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+    val primaryAccentGlow = if (colors.isDark) CyberGreenGlow else LightPrimary
+    val adAccent = if (colors.isDark) AdGold else Color(0xFFD97706)
+    val playerBackground = if (colors.isDark) ObsidianBlack else MaterialTheme.colorScheme.background
+
     val episode by viewModel.currentPlayingEpisode.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val isBuffering by viewModel.isBuffering.collectAsStateWithLifecycle()
@@ -2684,7 +2786,7 @@ fun FullPlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ObsidianBlack)
+            .background(playerBackground)
             .statusBarsPadding()
             .navigationBarsPadding()
             .testTag("full_player_screen")
@@ -2697,7 +2799,11 @@ fun FullPlayerScreen(
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            if (isAdActive) AdGold.copy(alpha = 0.12f) else CyberGreen.copy(alpha = 0.12f),
+                            if (colors.isDark) {
+                                if (isAdActive) AdGold.copy(alpha = 0.12f) else CyberGreen.copy(alpha = 0.12f)
+                            } else {
+                                if (isAdActive) AdGold.copy(alpha = 0.16f) else LightPrimary.copy(alpha = 0.10f)
+                            },
                             Color.Transparent
                         )
                     )
@@ -2724,7 +2830,7 @@ fun FullPlayerScreen(
                     Icon(
                         Icons.Default.KeyboardArrowDown,
                         contentDescription = "Collapse",
-                        tint = TextWhite,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -2737,8 +2843,8 @@ fun FullPlayerScreen(
                     Surface(
                         onClick = { showDescriptionSheet = true },
                         shape = RoundedCornerShape(20.dp),
-                        color = DarkCharcoal,
-                        border = BorderStroke(1.dp, BorderGray),
+                        color = colors.cardBackground,
+                        border = BorderStroke(1.dp, colors.itemBorder),
                         modifier = Modifier.testTag("player_notes_button")
                     ) {
                         Row(
@@ -2748,13 +2854,13 @@ fun FullPlayerScreen(
                             Icon(
                                 Icons.Default.Info,
                                 contentDescription = "Show Notes",
-                                tint = TextGray,
+                                tint = colors.textMuted,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Notes",
-                                color = TextWhite,
+                                color = colors.textPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
@@ -2766,8 +2872,8 @@ fun FullPlayerScreen(
                     Surface(
                         onClick = { showChaptersSheet = true },
                         shape = RoundedCornerShape(20.dp),
-                        color = if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.15f) else DarkCharcoal,
-                        border = BorderStroke(1.dp, if (chapters.isNotEmpty()) CyberGreen.copy(alpha = 0.6f) else BorderGray),
+                        color = if (chapters.isNotEmpty()) (if (colors.isDark) CyberGreen.copy(alpha = 0.15f) else LightPrimary.copy(alpha = 0.12f)) else colors.cardBackground,
+                        border = BorderStroke(1.dp, if (chapters.isNotEmpty()) (if (colors.isDark) CyberGreen.copy(alpha = 0.6f) else LightPrimary.copy(alpha = 0.5f)) else colors.itemBorder),
                         modifier = Modifier.testTag("player_chapters_button")
                     ) {
                         Row(
@@ -2777,13 +2883,13 @@ fun FullPlayerScreen(
                             Icon(
                                 Icons.Default.FormatListBulleted,
                                 contentDescription = "Chapters",
-                                tint = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                                tint = if (chapters.isNotEmpty()) primaryAccent else colors.textMuted,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = if (chapters.isNotEmpty()) "Chapters (${chapters.size})" else "Chapters",
-                                color = if (chapters.isNotEmpty()) CyberGreen else TextGray,
+                                color = if (chapters.isNotEmpty()) primaryAccent else colors.textMuted,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
@@ -2795,8 +2901,8 @@ fun FullPlayerScreen(
                     Surface(
                         onClick = { showTranscriptSheet = true },
                         shape = RoundedCornerShape(20.dp),
-                        color = if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = 0.15f) else DarkCharcoal,
-                        border = BorderStroke(1.dp, if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = 0.6f) else BorderGray),
+                        color = if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = if (colors.isDark) 0.15f else 0.18f) else colors.cardBackground,
+                        border = BorderStroke(1.dp, if (transcriptSegments.isNotEmpty()) AdGold.copy(alpha = 0.6f) else colors.itemBorder),
                         modifier = Modifier.testTag("player_transcript_button")
                     ) {
                         Row(
@@ -2806,13 +2912,13 @@ fun FullPlayerScreen(
                             Icon(
                                 Icons.Default.Subtitles,
                                 contentDescription = "Transcript",
-                                tint = if (transcriptSegments.isNotEmpty()) AdGold else TextGray,
+                                tint = if (transcriptSegments.isNotEmpty()) adAccent else colors.textMuted,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "Transcript",
-                                color = if (transcriptSegments.isNotEmpty()) AdGold else TextGray,
+                                color = if (transcriptSegments.isNotEmpty()) adAccent else colors.textMuted,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
@@ -2828,7 +2934,7 @@ fun FullPlayerScreen(
                     Icon(
                         if (episode!!.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
                         contentDescription = "Favorite",
-                        tint = if (episode!!.isFavorite) ErrorRed else TextWhite,
+                        tint = if (episode!!.isFavorite) ErrorRed else colors.textPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -2839,8 +2945,8 @@ fun FullPlayerScreen(
                 modifier = Modifier
                     .size(280.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(DarkCharcoal)
-                    .border(1.dp, if (isAdActive) AdGold else BorderGray, RoundedCornerShape(24.dp))
+                    .background(colors.cardBackground)
+                    .border(1.dp, if (isAdActive) AdGold else colors.itemBorder, RoundedCornerShape(24.dp))
                     .pointerInput(Unit) {
                         detectVerticalDragGestures { _, dragAmount ->
                             if (dragAmount > 20f) {
@@ -2866,7 +2972,7 @@ fun FullPlayerScreen(
             ) {
                 Text(
                     text = episode!!.title,
-                    color = TextWhite,
+                    color = colors.textPrimary,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Black,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -2876,7 +2982,7 @@ fun FullPlayerScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = episode!!.podcastTitle,
-                    color = CyberGreenGlow,
+                    color = primaryAccentGlow,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -2885,8 +2991,8 @@ fun FullPlayerScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = CyberGreen.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
+                        color = if (colors.isDark) CyberGreen.copy(alpha = 0.15f) else LightPrimary.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, if (colors.isDark) CyberGreen.copy(alpha = 0.5f) else LightPrimary.copy(alpha = 0.4f)),
                         modifier = Modifier.testTag("buffering_chip")
                     ) {
                         Row(
@@ -2895,13 +3001,13 @@ fun FullPlayerScreen(
                         ) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(12.dp),
-                                color = CyberGreen,
+                                color = primaryAccent,
                                 strokeWidth = 2.dp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Buffering audio stream from server...",
-                                color = CyberGreen,
+                                color = primaryAccent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -2912,8 +3018,8 @@ fun FullPlayerScreen(
                     Surface(
                         onClick = { showChaptersSheet = true },
                         shape = RoundedCornerShape(12.dp),
-                        color = DarkCharcoal,
-                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.4f)),
+                        color = colors.cardBackground,
+                        border = BorderStroke(1.dp, if (colors.isDark) CyberGreen.copy(alpha = 0.4f) else LightPrimary.copy(alpha = 0.4f)),
                         modifier = Modifier.testTag("active_chapter_chip")
                     ) {
                         Row(
@@ -2923,13 +3029,13 @@ fun FullPlayerScreen(
                             Icon(
                                 Icons.Default.Bookmarks,
                                 contentDescription = null,
-                                tint = CyberGreen,
+                                tint = primaryAccent,
                                 modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "${activeChapter!!.formattedStartTime()} • ${activeChapter!!.title}",
-                                color = TextWhite,
+                                color = colors.textPrimary,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
@@ -2943,13 +3049,13 @@ fun FullPlayerScreen(
             // Ad Skipper Control & Audio-Wave Anomaly Detector Console
             Card(
                 colors = CardDefaults.cardColors(
-                    containerColor = if (isAdActive) AdGold.copy(alpha = 0.16f) else DarkCharcoal
+                    containerColor = if (isAdActive) AdGold.copy(alpha = if (colors.isDark) 0.16f else 0.14f) else colors.cardBackground
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         1.dp,
-                        if (isAdActive) AdGold else if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.5f) else BorderGray,
+                        if (isAdActive) AdGold else if (isAutoAdSkipEnabled) (if (colors.isDark) CyberGreen.copy(alpha = 0.5f) else LightPrimary.copy(alpha = 0.4f)) else colors.itemBorder,
                         RoundedCornerShape(14.dp)
                     )
                     .testTag("player_ad_skipper_console"),
@@ -2972,7 +3078,7 @@ fun FullPlayerScreen(
                                 modifier = Modifier
                                     .size(30.dp)
                                     .background(
-                                        if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.2f) else BorderGray.copy(alpha = 0.3f),
+                                        if (isAutoAdSkipEnabled) (if (colors.isDark) CyberGreen.copy(alpha = 0.2f) else LightPrimary.copy(alpha = 0.15f)) else colors.itemBorder.copy(alpha = 0.5f),
                                         CircleShape
                                     ),
                                 contentAlignment = Alignment.Center
@@ -2980,7 +3086,7 @@ fun FullPlayerScreen(
                                 Icon(
                                     if (isAutoAdSkipEnabled) Icons.Default.Shield else Icons.Default.ShieldMoon,
                                     contentDescription = null,
-                                    tint = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                    tint = if (isAutoAdSkipEnabled) primaryAccent else colors.textMuted,
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -2989,18 +3095,18 @@ fun FullPlayerScreen(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = "Smart Ad & Wave Skipper",
-                                        color = TextWhite,
+                                        color = colors.textPrimary,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Black
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Surface(
                                         shape = RoundedCornerShape(4.dp),
-                                        color = if (isAutoAdSkipEnabled) CyberGreen.copy(alpha = 0.2f) else BorderGray
+                                        color = if (isAutoAdSkipEnabled) (if (colors.isDark) CyberGreen.copy(alpha = 0.2f) else LightPrimary.copy(alpha = 0.15f)) else colors.itemBorder.copy(alpha = 0.5f)
                                     ) {
                                         Text(
                                             text = if (isAutoAdSkipEnabled) "ON" else "OFF",
-                                            color = if (isAutoAdSkipEnabled) CyberGreen else TextGray,
+                                            color = if (isAutoAdSkipEnabled) primaryAccent else colors.textMuted,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
@@ -3009,7 +3115,7 @@ fun FullPlayerScreen(
                                 }
                                 Text(
                                     text = if (isAutoAdSkipEnabled) "Auto-zapping audio-wave spikes & sponsors" else "Ads allowed (switched off)",
-                                    color = if (isAutoAdSkipEnabled) CyberGreenGlow else TextGray,
+                                    color = if (isAutoAdSkipEnabled) primaryAccentGlow else colors.textMuted,
                                     fontSize = 10.sp,
                                     maxLines = 1
                                 )
@@ -3021,11 +3127,11 @@ fun FullPlayerScreen(
                             checked = isAutoAdSkipEnabled,
                             onCheckedChange = { viewModel.toggleAutoAdSkip() },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = ObsidianBlack,
-                                checkedTrackColor = CyberGreen,
-                                uncheckedThumbColor = TextGray,
-                                uncheckedTrackColor = DarkCharcoal,
-                                uncheckedBorderColor = BorderGray
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = primaryAccent,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = if (colors.isDark) DarkCharcoal else LightCard,
+                                uncheckedBorderColor = colors.itemBorder
                             ),
                             modifier = Modifier.testTag("player_ad_skip_toggle_switch")
                         )
@@ -3045,20 +3151,20 @@ fun FullPlayerScreen(
                                     Icon(
                                         Icons.Default.GraphicEq,
                                         contentDescription = null,
-                                        tint = CyberGreen,
+                                        tint = primaryAccent,
                                         modifier = Modifier.size(11.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "Acoustic Waveform Analysis",
-                                        color = TextGray,
+                                        color = colors.textMuted,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Text(
                                     text = if (isAdActive) "⚡ AD WAVE SPIKE DETECTED" else "RMS Level: ${(currentAudioEnergy * 100).toInt()}%",
-                                    color = if (isAdActive) AdGold else CyberGreenGlow,
+                                    color = if (isAdActive) adAccent else primaryAccentGlow,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black
                                 )
@@ -3071,8 +3177,8 @@ fun FullPlayerScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(24.dp)
-                                    .background(ObsidianBlack.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                                    .border(0.5.dp, BorderGray, RoundedCornerShape(6.dp))
+                                    .background(if (colors.isDark) ObsidianBlack.copy(alpha = 0.6f) else LightCard, RoundedCornerShape(6.dp))
+                                    .border(0.5.dp, colors.itemBorder, RoundedCornerShape(6.dp))
                                     .padding(horizontal = 4.dp, vertical = 2.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
@@ -3092,8 +3198,8 @@ fun FullPlayerScreen(
 
                                         val barColor = when {
                                             isAcousticAd -> if (isPast) AdGold else AdGold.copy(alpha = 0.5f)
-                                            isPast -> CyberGreen
-                                            else -> TextGray.copy(alpha = 0.35f)
+                                            isPast -> primaryAccent
+                                            else -> colors.textMuted.copy(alpha = 0.35f)
                                         }
 
                                         Box(
@@ -3125,11 +3231,11 @@ fun FullPlayerScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Campaign, contentDescription = null, tint = AdGold, modifier = Modifier.size(16.dp))
+                                    Icon(Icons.Default.Campaign, contentDescription = null, tint = adAccent, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Ad / Wave Spike Playing",
-                                        color = AdGold,
+                                        color = adAccent,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -3161,9 +3267,9 @@ fun FullPlayerScreen(
                     onValueChange = { viewModel.seekTo(it.toLong()) },
                     valueRange = 0f..durationMs,
                     colors = SliderDefaults.colors(
-                        thumbColor = if (isAdActive) AdGold else CyberGreen,
-                        activeTrackColor = if (isAdActive) AdGold else CyberGreen,
-                        inactiveTrackColor = BorderGray
+                        thumbColor = if (isAdActive) AdGold else primaryAccent,
+                        activeTrackColor = if (isAdActive) AdGold else primaryAccent,
+                        inactiveTrackColor = colors.itemBorder
                     ),
                     modifier = Modifier.testTag("playback_slider")
                 )
@@ -3174,12 +3280,12 @@ fun FullPlayerScreen(
                 ) {
                     Text(
                         text = viewModel.formatDuration(playbackPositionMs / 1000),
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp
                     )
                     Text(
                         text = viewModel.formatDuration(episode!!.durationSeconds),
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp
                     )
                 }
@@ -3196,14 +3302,14 @@ fun FullPlayerScreen(
                     onClick = { viewModel.skipToPreviousChapter() },
                     modifier = Modifier
                         .size(42.dp)
-                        .background(DarkCharcoal, CircleShape)
-                        .border(1.dp, BorderGray, CircleShape)
+                        .background(colors.cardBackground, CircleShape)
+                        .border(1.dp, colors.itemBorder, CircleShape)
                         .testTag("button_prev_chapter")
                 ) {
                     Icon(
                         Icons.Default.SkipPrevious,
                         contentDescription = "Previous Chapter",
-                        tint = TextWhite,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -3213,14 +3319,14 @@ fun FullPlayerScreen(
                     onClick = { viewModel.skipBackward() },
                     modifier = Modifier
                         .size(65.dp)
-                        .background(DarkCharcoal, CircleShape)
-                        .border(1.dp, BorderGray, CircleShape)
+                        .background(colors.cardBackground, CircleShape)
+                        .border(1.dp, colors.itemBorder, CircleShape)
                         .testTag("skip_backward")
                 ) {
                     Icon(
                         Icons.Default.Replay10,
                         contentDescription = "Rewind 10s",
-                        tint = TextWhite,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -3230,13 +3336,13 @@ fun FullPlayerScreen(
                     onClick = { viewModel.togglePlayPause() },
                     modifier = Modifier
                         .size(72.dp)
-                        .background(if (isAdActive) AdGold else CyberGreen, CircleShape)
+                        .background(if (isAdActive) AdGold else primaryAccent, CircleShape)
                         .testTag("player_play_pause")
                 ) {
                     Icon(
                         if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         contentDescription = if (isPlaying) "Pause" else "Play",
-                        tint = ObsidianBlack,
+                        tint = if (isAdActive) ObsidianBlack else Color.White,
                         modifier = Modifier.size(36.dp)
                     )
                 }
@@ -3246,14 +3352,14 @@ fun FullPlayerScreen(
                     onClick = { viewModel.skipForward() },
                     modifier = Modifier
                         .size(65.dp)
-                        .background(DarkCharcoal, CircleShape)
-                        .border(1.dp, BorderGray, CircleShape)
+                        .background(colors.cardBackground, CircleShape)
+                        .border(1.dp, colors.itemBorder, CircleShape)
                         .testTag("skip_forward")
                 ) {
                     Icon(
                         Icons.Default.Forward10,
                         contentDescription = "Forward 10s",
-                        tint = TextWhite,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -3263,14 +3369,14 @@ fun FullPlayerScreen(
                     onClick = { viewModel.skipToNextChapter() },
                     modifier = Modifier
                         .size(42.dp)
-                        .background(DarkCharcoal, CircleShape)
-                        .border(1.dp, BorderGray, CircleShape)
+                        .background(colors.cardBackground, CircleShape)
+                        .border(1.dp, colors.itemBorder, CircleShape)
                         .testTag("button_next_chapter")
                 ) {
                     Icon(
                         Icons.Default.SkipNext,
                         contentDescription = "Next Chapter",
-                        tint = TextWhite,
+                        tint = colors.textPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -3286,13 +3392,13 @@ fun FullPlayerScreen(
                     Icon(
                         if (episode!!.isDownloaded) Icons.Default.OfflinePin else Icons.Default.CloudQueue,
                         contentDescription = null,
-                        tint = if (episode!!.isDownloaded) CyberGreenGlow else TextGray,
+                        tint = if (episode!!.isDownloaded) primaryAccentGlow else colors.textMuted,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (episode!!.isDownloaded) "Offline Memory" else "Cloud Stream",
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -3306,13 +3412,13 @@ fun FullPlayerScreen(
                     Icon(
                         Icons.Default.Bookmarks,
                         contentDescription = null,
-                        tint = CyberGreen,
+                        tint = primaryAccent,
                         modifier = Modifier.size(13.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = if (chapters.isNotEmpty()) "View Chapters (${chapters.size})" else "Chapters",
-                        color = CyberGreen,
+                        color = primaryAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -3369,11 +3475,15 @@ fun EpisodeDescriptionBottomSheet(
     onRefreshMetadata: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalCustomColors.current
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+    val primaryAccentGlow = if (colors.isDark) CyberGreenGlow else LightPrimary
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBlack,
+        containerColor = colors.cardBackground,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = BorderGray)
+            BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         modifier = Modifier.testTag("episode_description_bottom_sheet")
@@ -3395,13 +3505,13 @@ fun EpisodeDescriptionBottomSheet(
                         Icon(
                             Icons.Default.Info,
                             contentDescription = null,
-                            tint = CyberGreen,
+                            tint = primaryAccent,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "EPISODE NOTES & DETAILS",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
@@ -3410,7 +3520,7 @@ fun EpisodeDescriptionBottomSheet(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = episode.podcastTitle,
-                        color = CyberGreenGlow,
+                        color = primaryAccentGlow,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -3425,7 +3535,7 @@ fun EpisodeDescriptionBottomSheet(
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = TextGray
+                        tint = colors.textMuted
                     )
                 }
             }
@@ -3434,7 +3544,7 @@ fun EpisodeDescriptionBottomSheet(
 
             Text(
                 text = episode.title,
-                color = TextWhite,
+                color = colors.textPrimary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 23.sp
@@ -3449,12 +3559,12 @@ fun EpisodeDescriptionBottomSheet(
             ) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = DarkCharcoal,
-                    border = BorderStroke(1.dp, BorderGray)
+                    color = if (colors.isDark) DarkCharcoal else LightCard,
+                    border = BorderStroke(1.dp, colors.itemBorder)
                 ) {
                     Text(
                         text = episode.publishDate,
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -3463,14 +3573,14 @@ fun EpisodeDescriptionBottomSheet(
 
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = DarkCharcoal,
-                    border = BorderStroke(1.dp, BorderGray)
+                    color = if (colors.isDark) DarkCharcoal else LightCard,
+                    border = BorderStroke(1.dp, colors.itemBorder)
                 ) {
                     val m = episode.durationSeconds / 60
                     val s = episode.durationSeconds % 60
                     Text(
                         text = "${m}m ${s}s",
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -3480,20 +3590,20 @@ fun EpisodeDescriptionBottomSheet(
                 OutlinedButton(
                     onClick = onRefreshMetadata,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.6f)),
+                    border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.6f)),
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                     modifier = Modifier.height(28.dp).testTag("sync_metadata_button")
                 ) {
                     Icon(
                         Icons.Default.Refresh,
                         contentDescription = "Sync",
-                        tint = CyberGreen,
+                        tint = primaryAccent,
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "Sync Feed",
-                        color = CyberGreen,
+                        color = primaryAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold
                     )
@@ -3501,12 +3611,12 @@ fun EpisodeDescriptionBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = BorderGray.copy(alpha = 0.5f))
+            HorizontalDivider(color = colors.itemBorder.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
                 text = episode.description.ifEmpty { "No show notes available for this episode." },
-                color = TextWhite.copy(alpha = 0.85f),
+                color = colors.textPrimary.copy(alpha = 0.85f),
                 fontSize = 14.sp,
                 lineHeight = 22.sp
             )
@@ -3524,6 +3634,11 @@ fun TranscriptBottomSheet(
     onSegmentSelected: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalCustomColors.current
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+    val primaryAccentGlow = if (colors.isDark) CyberGreenGlow else LightPrimary
+    val adAccent = if (colors.isDark) AdGold else Color(0xFFD97706)
+
     var searchQuery by remember { mutableStateOf("") }
     var filterSponsorsOnly by remember { mutableStateOf(false) }
 
@@ -3547,9 +3662,9 @@ fun TranscriptBottomSheet(
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBlack,
+        containerColor = colors.cardBackground,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = BorderGray)
+            BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         modifier = Modifier.testTag("transcript_bottom_sheet")
@@ -3571,13 +3686,13 @@ fun TranscriptBottomSheet(
                         Icon(
                             Icons.Default.Subtitles,
                             contentDescription = null,
-                            tint = CyberGreen,
+                            tint = primaryAccent,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "PODCAST TRANSCRIPT",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
@@ -3592,7 +3707,7 @@ fun TranscriptBottomSheet(
                             ) {
                                 Text(
                                     text = "$sponsorCount Ads Identified",
-                                    color = AdGold,
+                                    color = adAccent,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -3602,7 +3717,7 @@ fun TranscriptBottomSheet(
                     }
                     Text(
                         text = episodeTitle,
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -3619,14 +3734,14 @@ fun TranscriptBottomSheet(
                         if (isTranscriptRefreshing) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(18.dp),
-                                color = CyberGreen,
+                                color = primaryAccent,
                                 strokeWidth = 2.dp
                             )
                         } else {
                             Icon(
                                 Icons.Default.Refresh,
                                 contentDescription = "Refresh Transcript",
-                                tint = CyberGreen,
+                                tint = primaryAccent,
                                 modifier = Modifier.size(22.dp)
                             )
                         }
@@ -3639,7 +3754,7 @@ fun TranscriptBottomSheet(
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Close",
-                            tint = TextGray
+                            tint = colors.textMuted
                         )
                     }
                 }
@@ -3649,13 +3764,13 @@ fun TranscriptBottomSheet(
 
             // Speech-To-Text (STT) Live Ad Keyword Scanner Console Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         1.dp,
-                        if (sttMatchedKeywords.isNotEmpty()) AdGold else CyberGreen.copy(alpha = 0.4f),
+                        if (sttMatchedKeywords.isNotEmpty()) adAccent else primaryAccent.copy(alpha = 0.4f),
                         RoundedCornerShape(14.dp)
                     )
                     .testTag("stt_ad_scanner_card")
@@ -3670,13 +3785,13 @@ fun TranscriptBottomSheet(
                             Icon(
                                 Icons.Default.RecordVoiceOver,
                                 contentDescription = null,
-                                tint = if (isSttScanning) CyberGreen else TextGray,
+                                tint = if (isSttScanning) primaryAccent else colors.textMuted,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Speech-To-Text (STT) Ad Keyword Scanner",
-                                color = TextWhite,
+                                color = colors.textPrimary,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -3685,10 +3800,11 @@ fun TranscriptBottomSheet(
                         Button(
                             onClick = { viewModel.toggleSttScanner() },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSttScanning) CyberGreen else DarkCharcoal,
-                                contentColor = if (isSttScanning) ObsidianBlack else TextWhite
+                                containerColor = if (isSttScanning) primaryAccent else (if (colors.isDark) DarkCharcoal else LightCanvas),
+                                contentColor = if (isSttScanning) (if (colors.isDark) ObsidianBlack else Color.White) else colors.textPrimary
                             ),
                             shape = RoundedCornerShape(8.dp),
+                            border = if (!isSttScanning) BorderStroke(1.dp, colors.itemBorder) else null,
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                             modifier = Modifier.height(28.dp).testTag("button_toggle_stt")
                         ) {
@@ -3704,14 +3820,14 @@ fun TranscriptBottomSheet(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Live Transcribed Speech:",
-                            color = TextGray,
+                            color = colors.textMuted,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (sttLiveText.isNotEmpty()) "\"$sttLiveText\"" else "Listening for live audio speech...",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 11.sp,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
                             lineHeight = 14.sp
@@ -3726,7 +3842,7 @@ fun TranscriptBottomSheet(
                         ) {
                             Text(
                                 text = "Ad Keywords Found:",
-                                color = TextGray,
+                                color = colors.textMuted,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -3735,7 +3851,7 @@ fun TranscriptBottomSheet(
                             if (sttMatchedKeywords.isEmpty()) {
                                 Text(
                                     text = "None in current speech window",
-                                    color = CyberGreenGlow,
+                                    color = primaryAccentGlow,
                                     fontSize = 10.sp
                                 )
                             } else {
@@ -3748,7 +3864,7 @@ fun TranscriptBottomSheet(
                                         ) {
                                             Text(
                                                 text = "⚠️ $kw",
-                                                color = AdGold,
+                                                color = adAccent,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Black,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -3767,10 +3883,10 @@ fun TranscriptBottomSheet(
             if (transcriptSegments.isEmpty()) {
                 // Clean empty state when episode has no transcript/script
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp))
+                        .border(1.dp, colors.itemBorder, RoundedCornerShape(16.dp))
                         .testTag("empty_transcript_card"),
                     shape = RoundedCornerShape(16.dp)
                 ) {
@@ -3783,28 +3899,28 @@ fun TranscriptBottomSheet(
                         Box(
                             modifier = Modifier
                                 .size(52.dp)
-                                .background(ObsidianBlack, CircleShape)
-                                .border(1.dp, BorderGray, CircleShape),
+                                .background(if (colors.isDark) ObsidianBlack else LightCanvas, CircleShape)
+                                .border(1.dp, colors.itemBorder, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 Icons.Default.Subtitles,
                                 contentDescription = null,
-                                tint = TextGray,
+                                tint = colors.textMuted,
                                 modifier = Modifier.size(26.dp)
                             )
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Kein Transkript vorhanden",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "Für diese Episode ist kein Skript oder Untertitel im Podcast-Feed hinterlegt.",
-                            color = TextGray,
+                            color = colors.textMuted,
                             fontSize = 12.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             lineHeight = 17.sp
@@ -3814,8 +3930,8 @@ fun TranscriptBottomSheet(
                             onClick = { viewModel.refreshCurrentEpisodeTranscript() },
                             enabled = !isTranscriptRefreshing,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = CyberGreen,
-                                contentColor = ObsidianBlack
+                                containerColor = primaryAccent,
+                                contentColor = if (colors.isDark) ObsidianBlack else Color.White
                             ),
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.testTag("btn_sync_transcript_empty")
@@ -3823,7 +3939,7 @@ fun TranscriptBottomSheet(
                             if (isTranscriptRefreshing) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(16.dp),
-                                    color = ObsidianBlack,
+                                    color = if (colors.isDark) ObsidianBlack else Color.White,
                                     strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -3843,7 +3959,7 @@ fun TranscriptBottomSheet(
             } else {
                 if (suggestedAdChunks.isNotEmpty()) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = AdGold.copy(alpha = 0.12f)),
+                        colors = CardDefaults.cardColors(containerColor = AdGold.copy(alpha = if (colors.isDark) 0.12f else 0.08f)),
                         border = BorderStroke(1.dp, AdGold),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -3864,20 +3980,20 @@ fun TranscriptBottomSheet(
                                     Icon(
                                         Icons.Default.AutoAwesome,
                                         contentDescription = null,
-                                        tint = AdGold,
+                                        tint = adAccent,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text(
                                             text = "AI Transcript Ad & Promo Analysis",
-                                            color = TextWhite,
+                                            color = colors.textPrimary,
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
                                             text = "${suggestedAdChunks.size} suggested ad or promo chunks detected in script",
-                                            color = AdGold,
+                                            color = adAccent,
                                             fontSize = 10.sp
                                         )
                                     }
@@ -3906,13 +4022,13 @@ fun TranscriptBottomSheet(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Im Skript suchen...", color = TextGray, fontSize = 12.sp) },
+                        placeholder = { Text("Im Skript suchen...", color = colors.textMuted, fontSize = 12.sp) },
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = CyberGreen,
-                            unfocusedBorderColor = BorderGray,
-                            focusedTextColor = TextWhite,
-                            unfocusedTextColor = TextWhite
+                            focusedBorderColor = primaryAccent,
+                            unfocusedBorderColor = colors.itemBorder,
+                            focusedTextColor = colors.textPrimary,
+                            unfocusedTextColor = colors.textPrimary
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -3923,7 +4039,7 @@ fun TranscriptBottomSheet(
                             Icon(
                                 Icons.Default.Search,
                                 contentDescription = null,
-                                tint = TextGray,
+                                tint = colors.textMuted,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -3944,14 +4060,14 @@ fun TranscriptBottomSheet(
                         },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = AdGold.copy(alpha = 0.25f),
-                            selectedLabelColor = AdGold,
-                            selectedLeadingIconColor = AdGold,
-                            containerColor = DarkCharcoal,
-                            labelColor = TextGray,
-                            iconColor = TextGray
+                            selectedLabelColor = adAccent,
+                            selectedLeadingIconColor = adAccent,
+                            containerColor = if (colors.isDark) DarkCharcoal else LightCard,
+                            labelColor = colors.textMuted,
+                            iconColor = colors.textMuted
                         ),
                         border = FilterChipDefaults.filterChipBorder(
-                            borderColor = BorderGray,
+                            borderColor = colors.itemBorder,
                             selectedBorderColor = AdGold,
                             enabled = true,
                             selected = filterSponsorsOnly
@@ -3964,10 +4080,10 @@ fun TranscriptBottomSheet(
 
                 if (filteredSegments.isEmpty()) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                        colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                            .border(1.dp, colors.itemBorder, RoundedCornerShape(16.dp)),
                         shape = RoundedCornerShape(16.dp)
                     ) {
                         Column(
@@ -3979,210 +4095,211 @@ fun TranscriptBottomSheet(
                             Icon(
                                 Icons.Default.SearchOff,
                                 contentDescription = null,
-                                tint = TextGray,
+                                tint = colors.textMuted,
                                 modifier = Modifier.size(36.dp)
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Keine passenden Zeilen gefunden",
-                                color = TextWhite,
+                                color = colors.textPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Überprüfe deine Suchbegriffe oder deaktiviere den Werbungsfilter.",
-                                color = TextGray,
+                                color = colors.textMuted,
                                 fontSize = 12.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
                             )
                         }
                     }
                 } else {
-                val currentSec = playbackPositionMs / 1000
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 440.dp)
-                ) {
-                    items(filteredSegments) { segment ->
-                        val isCurrentLine = currentSec >= segment.startTimeSeconds &&
-                                currentSec < (segment.startTimeSeconds + 30)
-                        val suggestion = suggestedAdChunks.find { it.segment.startTimeSeconds == segment.startTimeSeconds }
+                    val currentSec = playbackPositionMs / 1000
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 440.dp)
+                    ) {
+                        items(filteredSegments) { segment ->
+                            val isCurrentLine = currentSec >= segment.startTimeSeconds &&
+                                    currentSec < (segment.startTimeSeconds + 30)
+                            val suggestion = suggestedAdChunks.find { it.segment.startTimeSeconds == segment.startTimeSeconds }
 
-                        Card(
-                            onClick = { onSegmentSelected(segment.startTimeSeconds * 1000L) },
-                            colors = CardDefaults.cardColors(
-                                containerColor = when {
-                                    segment.isSponsor -> AdGold.copy(alpha = 0.12f)
-                                    suggestion != null -> Color(0xFFFFB74D).copy(alpha = 0.08f)
-                                    isCurrentLine -> CyberGreen.copy(alpha = 0.12f)
-                                    else -> DarkCharcoal
-                                }
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(
-                                    width = if (isCurrentLine || segment.isSponsor || suggestion != null) 1.5.dp else 1.dp,
-                                    color = when {
-                                        segment.isSponsor -> AdGold
-                                        suggestion != null -> Color(0xFFFFB74D)
-                                        isCurrentLine -> CyberGreen
-                                        else -> BorderGray
-                                    },
-                                    shape = RoundedCornerShape(12.dp)
-                                )
-                                .testTag("transcript_item_${segment.startTimeSeconds}")
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = if (segment.isSponsor) AdGold.copy(alpha = 0.2f) else CyberGreen.copy(alpha = 0.2f),
-                                            border = BorderStroke(1.dp, if (segment.isSponsor) AdGold else CyberGreen)
-                                        ) {
-                                            Text(
-                                                text = segment.formattedTime(),
-                                                color = if (segment.isSponsor) AdGold else CyberGreen,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = segment.speaker,
-                                            color = TextWhite,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Black
-                                        )
+                            Card(
+                                onClick = { onSegmentSelected(segment.startTimeSeconds * 1000L) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = when {
+                                        segment.isSponsor -> AdGold.copy(alpha = if (colors.isDark) 0.12f else 0.09f)
+                                        suggestion != null -> Color(0xFFFFB74D).copy(alpha = if (colors.isDark) 0.08f else 0.14f)
+                                        isCurrentLine -> primaryAccent.copy(alpha = if (colors.isDark) 0.12f else 0.10f)
+                                        else -> if (colors.isDark) DarkCharcoal else LightCard
                                     }
-
-                                    if (segment.isSponsor) {
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = if (isCurrentLine || segment.isSponsor || suggestion != null) 1.5.dp else 1.dp,
+                                        color = when {
+                                            segment.isSponsor -> AdGold
+                                            suggestion != null -> Color(0xFFFFB74D)
+                                            isCurrentLine -> primaryAccent
+                                            else -> colors.itemBorder
+                                        },
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .testTag("transcript_item_${segment.startTimeSeconds}")
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = AdGold.copy(alpha = 0.25f),
-                                                border = BorderStroke(1.dp, AdGold)
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = if (segment.isSponsor) AdGold.copy(alpha = 0.2f) else primaryAccent.copy(alpha = 0.2f),
+                                                border = BorderStroke(1.dp, if (segment.isSponsor) AdGold else primaryAccent)
                                             ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
+                                                Text(
+                                                    text = segment.formattedTime(),
+                                                    color = if (segment.isSponsor) adAccent else primaryAccent,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.MonetizationOn,
-                                                        contentDescription = null,
-                                                        tint = AdGold,
-                                                        modifier = Modifier.size(11.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        text = "AD / SPONSOR (AUTO-SKIP)",
-                                                        color = AdGold,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Black
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            IconButton(
-                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.Close,
-                                                    contentDescription = "Unmark Ad",
-                                                    tint = TextGray,
-                                                    modifier = Modifier.size(14.dp)
                                                 )
                                             }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = segment.speaker,
+                                                color = colors.textPrimary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Black
+                                            )
                                         }
-                                    } else if (suggestion != null) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = Color(0xFFFFB74D).copy(alpha = 0.2f),
-                                                border = BorderStroke(1.dp, Color(0xFFFFB74D))
-                                            ) {
-                                                Row(
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Lightbulb,
-                                                        contentDescription = null,
-                                                        tint = Color(0xFFFFB74D),
-                                                        modifier = Modifier.size(11.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(
-                                                        text = suggestion.reason,
-                                                        color = Color(0xFFFFB74D),
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Button(
-                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
-                                                colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
-                                                shape = RoundedCornerShape(6.dp),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(26.dp)
-                                            ) {
-                                                Text("Mark Ad", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    } else {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (isCurrentLine) {
+
+                                        if (segment.isSponsor) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Surface(
                                                     shape = RoundedCornerShape(8.dp),
-                                                    color = CyberGreen.copy(alpha = 0.2f),
-                                                    border = BorderStroke(1.dp, CyberGreen)
+                                                    color = AdGold.copy(alpha = 0.25f),
+                                                    border = BorderStroke(1.dp, AdGold)
                                                 ) {
-                                                    Text(
-                                                        text = "CURRENTLY PLAYING",
-                                                        color = CyberGreen,
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Black,
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                    )
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.MonetizationOn,
+                                                            contentDescription = null,
+                                                            tint = adAccent,
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            text = "AD / SPONSOR (AUTO-SKIP)",
+                                                            color = adAccent,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black
+                                                        )
+                                                    }
                                                 }
                                                 Spacer(modifier = Modifier.width(6.dp))
+                                                IconButton(
+                                                    onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        contentDescription = "Unmark Ad",
+                                                        tint = colors.textMuted,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
                                             }
-                                            OutlinedButton(
-                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
-                                                border = BorderStroke(1.dp, BorderGray),
-                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextGray),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                shape = RoundedCornerShape(6.dp),
-                                                modifier = Modifier.height(26.dp)
-                                            ) {
-                                                Text("+ Mark Ad", fontSize = 10.sp)
+                                        } else if (suggestion != null) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = Color(0xFFFFB74D).copy(alpha = 0.2f),
+                                                    border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Lightbulb,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFFFFB74D),
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            text = suggestion.reason,
+                                                            color = if (colors.isDark) Color(0xFFFFB74D) else Color(0xFFD97706),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Button(
+                                                    onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(26.dp)
+                                                ) {
+                                                    Text("Mark Ad", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        } else {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (isCurrentLine) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = primaryAccent.copy(alpha = 0.2f),
+                                                        border = BorderStroke(1.dp, primaryAccent)
+                                                    ) {
+                                                        Text(
+                                                            text = "CURRENTLY PLAYING",
+                                                            color = primaryAccent,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                }
+                                                OutlinedButton(
+                                                    onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                    border = BorderStroke(1.dp, colors.itemBorder),
+                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textMuted),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    modifier = Modifier.height(26.dp)
+                                                ) {
+                                                    Text("+ Mark Ad", fontSize = 10.sp)
+                                                }
                                             }
                                         }
                                     }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Text(
+                                        text = segment.text,
+                                        color = if (segment.isSponsor) colors.textPrimary else colors.textPrimary.copy(alpha = 0.9f),
+                                        fontSize = 12.sp,
+                                        lineHeight = 17.sp
+                                    )
                                 }
-
-                                Spacer(modifier = Modifier.height(6.dp))
-
-                                Text(
-                                    text = segment.text,
-                                    color = if (segment.isSponsor) TextWhite else TextWhite.copy(alpha = 0.9f),
-                                    fontSize = 12.sp,
-                                    lineHeight = 17.sp
-                                )
                             }
                         }
                     }
@@ -4190,7 +4307,6 @@ fun TranscriptBottomSheet(
             }
         }
     }
-}
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -4202,11 +4318,15 @@ fun ChaptersBottomSheet(
     onChapterSelected: (com.example.data.PodcastChapter) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalCustomColors.current
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+    val primaryAccentGlow = if (colors.isDark) CyberGreenGlow else LightPrimary
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBlack,
+        containerColor = colors.cardBackground,
         dragHandle = {
-            BottomSheetDefaults.DragHandle(color = BorderGray)
+            BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         modifier = Modifier.testTag("chapters_bottom_sheet")
@@ -4228,13 +4348,13 @@ fun ChaptersBottomSheet(
                         Icon(
                             Icons.Default.FormatListBulleted,
                             contentDescription = null,
-                            tint = CyberGreen,
+                            tint = primaryAccent,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "EPISODE CHAPTERS",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
                             letterSpacing = 1.sp
@@ -4242,12 +4362,12 @@ fun ChaptersBottomSheet(
                         Spacer(modifier = Modifier.width(8.dp))
                         Surface(
                             shape = RoundedCornerShape(10.dp),
-                            color = CyberGreen.copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f))
+                            color = primaryAccent.copy(alpha = 0.2f),
+                            border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.5f))
                         ) {
                             Text(
                                 text = "${chapters.size}",
-                                color = CyberGreen,
+                                color = primaryAccent,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Black,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -4256,7 +4376,7 @@ fun ChaptersBottomSheet(
                     }
                     Text(
                         text = episodeTitle,
-                        color = TextGray,
+                        color = colors.textMuted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -4271,7 +4391,7 @@ fun ChaptersBottomSheet(
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",
-                        tint = TextGray
+                        tint = colors.textMuted
                     )
                 }
             }
@@ -4280,10 +4400,10 @@ fun ChaptersBottomSheet(
 
             if (chapters.isEmpty()) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = DarkCharcoal),
+                    colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, BorderGray, RoundedCornerShape(16.dp)),
+                        .border(1.dp, colors.itemBorder, RoundedCornerShape(16.dp)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(
@@ -4295,20 +4415,20 @@ fun ChaptersBottomSheet(
                         Icon(
                             Icons.Default.Bookmarks,
                             contentDescription = null,
-                            tint = TextGray,
+                            tint = colors.textMuted,
                             modifier = Modifier.size(40.dp)
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "No Chapters Available",
-                            color = TextWhite,
+                            color = colors.textPrimary,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = "This episode does not contain embedded chapter timestamps or structured section notes.",
-                            color = TextGray,
+                            color = colors.textMuted,
                             fontSize = 12.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             lineHeight = 16.sp
@@ -4328,14 +4448,14 @@ fun ChaptersBottomSheet(
                         Card(
                             onClick = { onChapterSelected(chapter) },
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isActive) DarkCharcoal else DarkCharcoal.copy(alpha = 0.6f)
+                                containerColor = if (isActive) (if (colors.isDark) DarkCharcoal else LightCard) else (if (colors.isDark) DarkCharcoal.copy(alpha = 0.6f) else LightCanvas)
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(
                                     width = if (isActive) 1.5.dp else 1.dp,
-                                    color = if (isActive) CyberGreen else BorderGray,
+                                    color = if (isActive) primaryAccent else colors.itemBorder,
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .testTag("chapter_item_${chapter.id}")
@@ -4351,21 +4471,21 @@ fun ChaptersBottomSheet(
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clip(CircleShape)
-                                        .background(if (isActive) CyberGreen else DarkCharcoal)
-                                        .border(1.dp, if (isActive) CyberGreenGlow else BorderGray, CircleShape),
+                                        .background(if (isActive) primaryAccent else (if (colors.isDark) DarkCharcoal else LightCard))
+                                        .border(1.dp, if (isActive) primaryAccentGlow else colors.itemBorder, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isActive) {
                                         Icon(
                                             Icons.Default.PlayArrow,
                                             contentDescription = "Playing",
-                                            tint = ObsidianBlack,
+                                            tint = if (colors.isDark) ObsidianBlack else Color.White,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     } else {
                                         Text(
                                             text = chapter.formattedStartTime(),
-                                            color = TextGray,
+                                            color = colors.textMuted,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -4377,7 +4497,7 @@ fun ChaptersBottomSheet(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = chapter.title,
-                                        color = if (isActive) CyberGreen else TextWhite,
+                                        color = if (isActive) primaryAccent else colors.textPrimary,
                                         fontSize = 13.sp,
                                         fontWeight = if (isActive) FontWeight.Black else FontWeight.SemiBold,
                                         maxLines = 2,
@@ -4387,13 +4507,13 @@ fun ChaptersBottomSheet(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "Starts at ${chapter.formattedStartTime()}",
-                                            color = TextGray,
+                                            color = colors.textMuted,
                                             fontSize = 11.sp
                                         )
                                         if (chapter.durationSeconds != null && chapter.durationSeconds > 0) {
                                             Text(
                                                 text = " • ${chapter.formattedDuration()}",
-                                                color = CyberGreenGlow,
+                                                color = primaryAccentGlow,
                                                 fontSize = 11.sp
                                             )
                                         }
@@ -4428,12 +4548,12 @@ fun ChaptersBottomSheet(
                                 } else if (isActive) {
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = CyberGreen.copy(alpha = 0.2f),
-                                        border = BorderStroke(1.dp, CyberGreen)
+                                        color = primaryAccent.copy(alpha = 0.2f),
+                                        border = BorderStroke(1.dp, primaryAccent)
                                     ) {
                                         Text(
                                             text = "ACTIVE",
-                                            color = CyberGreen,
+                                            color = primaryAccent,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Black,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

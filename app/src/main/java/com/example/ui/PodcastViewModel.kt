@@ -180,6 +180,32 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _isPlayerExpanded.value = false
     }
 
+    fun stopAndDismissPlayer() {
+        val current = _currentPlayingEpisode.value
+        _isPlaying.value = false
+        audioManager.stop()
+        stopPlaybackJob()
+        _isPlayerExpanded.value = false
+        _isAdActive.value = false
+        lastSkippedTranscriptTimeSec = null
+        lastSkippedChapterTitle = null
+        lastSkippedAcousticAdId = null
+
+        if (current != null) {
+            val finalPos = _playbackPositionMs.value
+            val isCompleted = current.durationSeconds > 0 && finalPos >= current.durationSeconds * 1000L
+            viewModelScope.launch {
+                repository.updateEpisodeProgress(current.id, finalPos, isCompleted)
+                repository.addSyncLog("Player", "Stopped playback and dismissed player for '${current.title}'")
+            }
+        }
+        _currentPlayingEpisode.value = null
+        _playbackPositionMs.value = 0L
+        _waveformAmplitudes.value = emptyList()
+        _acousticAdSegments.value = emptyList()
+        _lastAcousticAdAlert.value = null
+    }
+
     fun togglePlayerExpanded() {
         _isPlayerExpanded.value = !_isPlayerExpanded.value
     }
