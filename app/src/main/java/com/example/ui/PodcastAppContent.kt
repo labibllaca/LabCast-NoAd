@@ -3532,6 +3532,7 @@ fun TranscriptBottomSheet(
     val sttMatchedKeywords by viewModel.sttMatchedKeywords.collectAsStateWithLifecycle()
     val sttConfidenceScore by viewModel.sttConfidenceScore.collectAsStateWithLifecycle()
     val isTranscriptRefreshing by viewModel.isTranscriptRefreshing.collectAsStateWithLifecycle()
+    val suggestedAdChunks by viewModel.suggestedAdChunks.collectAsStateWithLifecycle()
 
     val filteredSegments = remember(transcriptSegments, searchQuery, filterSponsorsOnly) {
         transcriptSegments.filter { seg ->
@@ -3840,6 +3841,63 @@ fun TranscriptBottomSheet(
                     }
                 }
             } else {
+                if (suggestedAdChunks.isNotEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = AdGold.copy(alpha = 0.12f)),
+                        border = BorderStroke(1.dp, AdGold),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                            .testTag("ai_suggested_ads_card")
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = AdGold,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "AI Transcript Ad & Promo Analysis",
+                                            color = TextWhite,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${suggestedAdChunks.size} suggested ad or promo chunks detected in script",
+                                            color = AdGold,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                                Button(
+                                    onClick = { viewModel.markAllSuggestedAsAds() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .height(30.dp)
+                                        .testTag("mark_all_suggested_ads_button")
+                                ) {
+                                    Text("Mark All as Ads", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Search & Ad Filter Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -3951,12 +4009,14 @@ fun TranscriptBottomSheet(
                     items(filteredSegments) { segment ->
                         val isCurrentLine = currentSec >= segment.startTimeSeconds &&
                                 currentSec < (segment.startTimeSeconds + 30)
+                        val suggestion = suggestedAdChunks.find { it.segment.startTimeSeconds == segment.startTimeSeconds }
 
                         Card(
                             onClick = { onSegmentSelected(segment.startTimeSeconds * 1000L) },
                             colors = CardDefaults.cardColors(
                                 containerColor = when {
                                     segment.isSponsor -> AdGold.copy(alpha = 0.12f)
+                                    suggestion != null -> Color(0xFFFFB74D).copy(alpha = 0.08f)
                                     isCurrentLine -> CyberGreen.copy(alpha = 0.12f)
                                     else -> DarkCharcoal
                                 }
@@ -3965,9 +4025,10 @@ fun TranscriptBottomSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(
-                                    width = if (isCurrentLine || segment.isSponsor) 1.5.dp else 1.dp,
+                                    width = if (isCurrentLine || segment.isSponsor || suggestion != null) 1.5.dp else 1.dp,
                                     color = when {
                                         segment.isSponsor -> AdGold
+                                        suggestion != null -> Color(0xFFFFB74D)
                                         isCurrentLine -> CyberGreen
                                         else -> BorderGray
                                     },
@@ -4005,43 +4066,111 @@ fun TranscriptBottomSheet(
                                     }
 
                                     if (segment.isSponsor) {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = AdGold.copy(alpha = 0.25f),
-                                            border = BorderStroke(1.dp, AdGold)
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = AdGold.copy(alpha = 0.25f),
+                                                border = BorderStroke(1.dp, AdGold)
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.MonetizationOn,
+                                                        contentDescription = null,
+                                                        tint = AdGold,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = "AD / SPONSOR (AUTO-SKIP)",
+                                                        color = AdGold,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Black
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            IconButton(
+                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                modifier = Modifier.size(24.dp)
                                             ) {
                                                 Icon(
-                                                    Icons.Default.MonetizationOn,
-                                                    contentDescription = null,
-                                                    tint = AdGold,
-                                                    modifier = Modifier.size(11.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "AD / SPONSOR STRING ${segment.sponsorBrand?.let { "($it)" } ?: ""}",
-                                                    color = AdGold,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Black
+                                                    Icons.Default.Close,
+                                                    contentDescription = "Unmark Ad",
+                                                    tint = TextGray,
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                             }
                                         }
-                                    } else if (isCurrentLine) {
-                                        Surface(
-                                            shape = RoundedCornerShape(8.dp),
-                                            color = CyberGreen.copy(alpha = 0.2f),
-                                            border = BorderStroke(1.dp, CyberGreen)
-                                        ) {
-                                            Text(
-                                                text = "CURRENTLY PLAYING",
-                                                color = CyberGreen,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
+                                    } else if (suggestion != null) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = Color(0xFFFFB74D).copy(alpha = 0.2f),
+                                                border = BorderStroke(1.dp, Color(0xFFFFB74D))
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Lightbulb,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFFFFB74D),
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = suggestion.reason,
+                                                        color = Color(0xFFFFB74D),
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Button(
+                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                                                shape = RoundedCornerShape(6.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.height(26.dp)
+                                            ) {
+                                                Text("Mark Ad", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (isCurrentLine) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    color = CyberGreen.copy(alpha = 0.2f),
+                                                    border = BorderStroke(1.dp, CyberGreen)
+                                                ) {
+                                                    Text(
+                                                        text = "CURRENTLY PLAYING",
+                                                        color = CyberGreen,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Black,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                            }
+                                            OutlinedButton(
+                                                onClick = { viewModel.toggleSegmentAdStatus(segment.startTimeSeconds) },
+                                                border = BorderStroke(1.dp, BorderGray),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextGray),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                shape = RoundedCornerShape(6.dp),
+                                                modifier = Modifier.height(26.dp)
+                                            ) {
+                                                Text("+ Mark Ad", fontSize = 10.sp)
+                                            }
                                         }
                                     }
                                 }

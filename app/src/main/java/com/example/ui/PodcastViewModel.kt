@@ -98,6 +98,63 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val suggestedAdChunks: StateFlow<List<com.example.data.SuggestedAdChunk>> = transcriptSegments
+        .map { segments ->
+            TranscriptParser.analyzeTranscriptForSuggestedAds(segments)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun toggleSegmentAdStatus(startTimeSeconds: Long) {
+        val currentEp = _currentPlayingEpisode.value ?: return
+        val currentSegments = transcriptSegments.value
+        if (currentSegments.isEmpty()) return
+
+        val updatedSegments = currentSegments.map { seg ->
+            if (seg.startTimeSeconds == startTimeSeconds) {
+                seg.copy(isSponsor = !seg.isSponsor)
+            } else {
+                seg
+            }
+        }
+
+        val newTranscriptText = TranscriptParser.serializeSegmentsToTranscriptText(updatedSegments)
+        val updatedEp = currentEp.copy(transcript = newTranscriptText)
+        _currentPlayingEpisode.value = updatedEp
+
+        viewModelScope.launch {
+            repository.updateEpisode(updatedEp)
+            val toggledSeg = updatedSegments.firstOrNull { it.startTimeSeconds == startTimeSeconds }
+            val status = if (toggledSeg?.isSponsor == true) "marked as AD" else "unmarked from ADs"
+            repository.addSyncLog("Transcript Ad Analyzer", "Segment at ${toggledSeg?.formattedTime()} $status.")
+        }
+    }
+
+    fun markAllSuggestedAsAds() {
+        val currentEp = _currentPlayingEpisode.value ?: return
+        val currentSegments = transcriptSegments.value
+        val suggestions = suggestedAdChunks.value
+        if (currentSegments.isEmpty() || suggestions.isEmpty()) return
+
+        val suggestedTimes = suggestions.map { it.segment.startTimeSeconds }.toSet()
+        val updatedSegments = currentSegments.map { seg ->
+            if (suggestedTimes.contains(seg.startTimeSeconds)) {
+                seg.copy(isSponsor = true)
+            } else {
+                seg
+            }
+        }
+
+        val newTranscriptText = TranscriptParser.serializeSegmentsToTranscriptText(updatedSegments)
+        val updatedEp = currentEp.copy(transcript = newTranscriptText)
+        _currentPlayingEpisode.value = updatedEp
+
+        viewModelScope.launch {
+            repository.updateEpisode(updatedEp)
+            _sponsorSkipEvent.value = "Marked ${suggestions.size} suggested transcript chunks as Ads!"
+            repository.addSyncLog("Transcript Ad Analyzer", "Marked ${suggestions.size} suggested transcript ad chunks for auto-skipping.")
+        }
+    }
+
     val currentActiveChapter: StateFlow<PodcastChapter?> = combine(
         currentChapters,
         _playbackPositionMs
@@ -1250,6 +1307,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private var lastSkippedChapterTitle: String? = null
     private var lastSkippedAcousticAdId: String? = null
+    private var lastSkippedTranscriptTimeSec: Long? = null
 
     private fun checkSponsorAndAdDetection(positionMs: Long) {
         val current = _currentPlayingEpisode.value ?: return
@@ -1356,7 +1414,46 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 3. Legacy / Custom timestamp ad detection fallback
+        // 3. Transcript-Based Ad Chunk & Cross-Podcast Promo Auto-Skipping
+        if (_isAutoAdSkipEnabled.value) {
+            val segments = transcriptSegments.value
+            if (segments.isNotEmpty()) {
+                val activeAdSegmentIndex = segments.indexOfFirst { seg ->
+                    seg.isSponsor && currentSeconds >= seg.startTimeSeconds && currentSeconds < (seg.startTimeSeconds + 45L)
+                }
+
+                if (activeAdSegmentIndex != -1) {
+                    val activeAdSeg = segments[activeAdSegmentIndex]
+                    if (lastSkippedTranscriptTimeSec != activeAdSeg.startTimeSeconds) {
+                        lastSkippedTranscriptTimeSec = activeAdSeg.startTimeSeconds
+
+                        val nextNonSponsorSeg = segments.drop(activeAdSegmentIndex + 1).firstOrNull { !it.isSponsor }
+                        val targetSec = nextNonSponsorSeg?.startTimeSeconds ?: (activeAdSeg.startTimeSeconds + 30L)
+                        val targetMs = (targetSec * 1000L).coerceAtMost(durationMs)
+                        val savedSecs = (targetSec - currentSeconds).coerceAtLeast(15)
+
+                        _adsBlockedCount.value += 1
+                        _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
+                        _playbackPositionMs.value = targetMs
+                        audioManager.seekTo(targetMs)
+                        _sponsorSkipEvent.value = "Auto-skipped Ad Chunk at ${activeAdSeg.formattedTime()}"
+
+                        viewModelScope.launch {
+                            repository.addSyncLog(
+                                "Transcript Ad Skipper",
+                                "Auto-skipped marked transcript ad/promo chunk '${activeAdSeg.speaker}' at ${activeAdSeg.formattedTime()}. Jumped forward ${savedSecs}s."
+                            )
+                            repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
+                        }
+                        return
+                    }
+                } else {
+                    lastSkippedTranscriptTimeSec = null
+                }
+            }
+        }
+
+        // 4. Legacy / Custom timestamp ad detection fallback
         if (current.adTimestampsSeconds.isNotEmpty()) {
             val adSeconds = current.adTimestampsSeconds.split(",")
                 .mapNotNull { it.trim().toLongOrNull() }

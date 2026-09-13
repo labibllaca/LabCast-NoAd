@@ -21,29 +21,86 @@ data class TranscriptSegment(
     }
 }
 
+data class SuggestedAdChunk(
+    val segment: TranscriptSegment,
+    val reason: String,
+    val confidenceScore: Float = 0.90f
+)
+
 object TranscriptParser {
 
     private val sponsorBrands = listOf(
         "Athletic Greens", "AG1", "LMNT", "Eight Sleep", "BetterHelp", "InsideTracker",
         "Shopify", "SimpliSafe", "ExpressVPN", "Huckberry", "Factor Meals", "NordVPN",
-        "SquareSpace", "Babbel", "Audible", "ManScaped", "DraftKings", "ZipRecruiter"
+        "SquareSpace", "Babbel", "Audible", "ManScaped", "DraftKings", "ZipRecruiter",
+        "HelloFresh", "SeatGeek", "MeUndies", "Casper", "Warby Parker", "DoorDash",
+        "Boll & Branch", "Policygenius", "Uncommon Goods", "DailyWire+", "DC Universe"
     )
 
     private val sponsorKeywords = listOf(
-        "sponsor", "sponsorship", "sponsored by", "brought to you by",
-        "werbung", "werbepartner", "promocode", "promo code", "discount code",
-        "special offer", "partner", "commercial break", "ad break"
+        "sponsor", "sponsorship", "sponsored by", "brought to you by", "presenting sponsor",
+        "werbung", "werbepartner", "promocode", "promo code", "discount code", "coupon code",
+        "special offer", "partner", "commercial break", "ad break", "reklama", "advertisement",
+        "advertiser", "use code", "visit ", "check out ", "discount", "off your first",
+        "free trial", "risk-free", "money-back guarantee", "link in description"
+    )
+
+    private val crossPodcastPromoKeywords = listOf(
+        "check out our other podcast", "listen to", "available wherever you get your podcasts",
+        "subscribe to", "on apple podcasts", "on spotify", "new episode of", "podcast network",
+        "from the creators of", "hosted by", "show notes", "follow us on instagram", "follow us on twitter"
     )
 
     fun isSponsorText(text: String): Boolean {
         val lower = text.lowercase(Locale.ROOT)
         return sponsorKeywords.any { lower.contains(it) } ||
-                sponsorBrands.any { lower.contains(it.lowercase(Locale.ROOT)) }
+                sponsorBrands.any { lower.contains(it.lowercase(Locale.ROOT)) } ||
+                crossPodcastPromoKeywords.any { lower.contains(it) }
     }
 
     fun detectSponsorBrand(text: String): String? {
         val lower = text.lowercase(Locale.ROOT)
         return sponsorBrands.firstOrNull { lower.contains(it.lowercase(Locale.ROOT)) }
+    }
+
+    fun analyzeTranscriptForSuggestedAds(segments: List<TranscriptSegment>): List<SuggestedAdChunk> {
+        val suggestions = mutableListOf<SuggestedAdChunk>()
+        for (seg in segments) {
+            val textLower = seg.text.lowercase(Locale.ROOT)
+            val speakerLower = seg.speaker.lowercase(Locale.ROOT)
+
+            val brand = detectSponsorBrand(seg.text) ?: detectSponsorBrand(seg.speaker)
+            if (brand != null) {
+                suggestions.add(SuggestedAdChunk(seg, "Sponsor Brand: $brand", 0.95f))
+                continue
+            }
+
+            val keywordMatch = sponsorKeywords.firstOrNull { textLower.contains(it) || speakerLower.contains(it) }
+            if (keywordMatch != null) {
+                suggestions.add(SuggestedAdChunk(seg, "Advertiser Keyword ($keywordMatch)", 0.90f))
+                continue
+            }
+
+            val promoMatch = crossPodcastPromoKeywords.firstOrNull { textLower.contains(it) || speakerLower.contains(it) }
+            if (promoMatch != null) {
+                suggestions.add(SuggestedAdChunk(seg, "Cross-Podcast Promo ($promoMatch)", 0.85f))
+                continue
+            }
+
+            if (Regex("""\b(code|promo|discount)\b.*\b[A-Z0-9]{3,10}\b""", RegexOption.IGNORE_CASE).containsMatchIn(seg.text) ||
+                Regex("""\bhttps?://|\b\w+\.(com|org|net|co|de|io)/""", RegexOption.IGNORE_CASE).containsMatchIn(seg.text)) {
+                suggestions.add(SuggestedAdChunk(seg, "Promo Code / Website URL", 0.88f))
+            }
+        }
+        return suggestions
+    }
+
+    fun serializeSegmentsToTranscriptText(segments: List<TranscriptSegment>): String {
+        return segments.joinToString("\n") { seg ->
+            val timeFormatted = seg.formattedTime()
+            val sponsorTag = if (seg.isSponsor) " [Sponsor Break]" else ""
+            "$timeFormatted [${seg.speaker}$sponsorTag] ${seg.text}"
+        }
     }
 
     fun parseTimeToSeconds(timeStr: String): Long {
