@@ -33,7 +33,6 @@ object EpisodeDownloader {
 
         val cleanId = episodeId.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val destinationFile = File(dir, "${cleanId}.mp3")
-        val tempFile = File(dir, "${cleanId}_tmp_${System.currentTimeMillis()}.mp3")
 
         try {
             if (!url.startsWith("http://") && !url.startsWith("https://")) {
@@ -41,71 +40,75 @@ object EpisodeDownloader {
                 return@withContext null
             }
 
-            Log.i("EpisodeDownloader", "Starting real offline download from: $url")
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) LabCast/1.0")
-                .header("Accept", "*/*")
-                .header("Accept-Encoding", "identity")
-                .build()
+            com.example.network.NetworkRetryPolicy.executeWithConnectionRetry(
+                operationName = "Download ($cleanId)",
+                maxMinuteCycles = 3
+            ) {
+                val tempFile = File(dir, "${cleanId}_tmp_${System.currentTimeMillis()}.mp3")
+                try {
+                    Log.i("EpisodeDownloader", "Starting real offline download from: $url")
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) LabCast/1.0")
+                        .header("Accept", "*/*")
+                        .header("Accept-Encoding", "identity")
+                        .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.e("EpisodeDownloader", "Download failed with HTTP ${response.code}: ${response.message}")
-                return@withContext null
-            }
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) {
+                        throw java.io.IOException("Download failed with HTTP ${response.code}: ${response.message}")
+                    }
 
-            val body = response.body ?: run {
-                Log.e("EpisodeDownloader", "Response body is null")
-                return@withContext null
-            }
+                    val body = response.body ?: throw java.io.IOException("Response body is null")
 
-            val contentLength = body.contentLength()
-            val inputStream = body.byteStream()
-            val outputStream = FileOutputStream(tempFile)
+                    val contentLength = body.contentLength()
+                    val inputStream = body.byteStream()
+                    val outputStream = FileOutputStream(tempFile)
 
-            val buffer = ByteArray(16384)
-            var bytesRead: Int
-            var totalBytes: Long = 0
+                    val buffer = ByteArray(16384)
+                    var bytesRead: Int
+                    var totalBytes: Long = 0
 
-            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
-                totalBytes += bytesRead
-                if (contentLength > 0) {
-                    onProgress((totalBytes.toFloat() / contentLength).coerceIn(0f, 1f))
+                    while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                        outputStream.write(buffer, 0, bytesRead)
+                        totalBytes += bytesRead
+                        if (contentLength > 0) {
+                            onProgress((totalBytes.toFloat() / contentLength).coerceIn(0f, 1f))
+                        }
+                    }
+
+                    outputStream.flush()
+                    outputStream.close()
+                    inputStream.close()
+
+                    // Verify that we downloaded a valid non-empty audio file (at least 15KB)
+                    if (totalBytes < 15000L || !tempFile.exists() || tempFile.length() < 15000L) {
+                        if (tempFile.exists()) tempFile.delete()
+                        throw java.io.IOException("Downloaded file too small ($totalBytes bytes)")
+                    }
+
+                    // Atomically replace destination file
+                    if (destinationFile.exists()) {
+                        destinationFile.delete()
+                    }
+                    val renamed = tempFile.renameTo(destinationFile)
+                    if (renamed && destinationFile.exists()) {
+                        Log.i("EpisodeDownloader", "Successfully downloaded episode (${destinationFile.length()} bytes) to: ${destinationFile.absolutePath}")
+                        onProgress(1.0f)
+                        destinationFile.absolutePath
+                    } else {
+                        if (tempFile.exists()) tempFile.delete()
+                        throw java.io.IOException("Failed to rename temp file to destination")
+                    }
+                } catch (e: Exception) {
+                    if (tempFile.exists()) {
+                        try { tempFile.delete() } catch (_: Exception) {}
+                    }
+                    throw e
                 }
             }
-
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
-
-            // Verify that we downloaded a valid non-empty audio file (at least 15KB)
-            if (totalBytes < 15000L || !tempFile.exists() || tempFile.length() < 15000L) {
-                Log.e("EpisodeDownloader", "Downloaded file too small ($totalBytes bytes), discarding.")
-                if (tempFile.exists()) tempFile.delete()
-                return@withContext null
-            }
-
-            // Atomically replace destination file
-            if (destinationFile.exists()) {
-                destinationFile.delete()
-            }
-            val renamed = tempFile.renameTo(destinationFile)
-            if (renamed && destinationFile.exists()) {
-                Log.i("EpisodeDownloader", "Successfully downloaded episode (${destinationFile.length()} bytes) to: ${destinationFile.absolutePath}")
-                onProgress(1.0f)
-                return@withContext destinationFile.absolutePath
-            } else {
-                Log.e("EpisodeDownloader", "Failed to rename temp file to destination")
-                if (tempFile.exists()) tempFile.delete()
-                return@withContext null
-            }
         } catch (e: Exception) {
-            Log.e("EpisodeDownloader", "Exception during download: ${e.message}", e)
-            if (tempFile.exists()) {
-                try { tempFile.delete() } catch (_: Exception) {}
-            }
+            Log.e("EpisodeDownloader", "Exception during download after retry policy: ${e.message}", e)
             null
         }
     }

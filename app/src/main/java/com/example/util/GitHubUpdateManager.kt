@@ -67,32 +67,28 @@ object GitHubUpdateManager {
         }
 
         try {
-            val request = Request.Builder()
-                .url(apiUrl)
-                .header("User-Agent", "LabCast-Android-OTA")
-                .header("Accept", "application/vnd.github.v3+json")
-                .build()
+            val body = com.example.network.NetworkRetryPolicy.executeWithConnectionRetry(
+                operationName = "GitHub Update Prüfung ($cleanRepo)",
+                maxMinuteCycles = 2
+            ) {
+                val request = Request.Builder()
+                    .url(apiUrl)
+                    .header("User-Agent", "LabCast-Android-OTA")
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .build()
 
-            val response = httpClient.newCall(request).execute()
-            val code = response.code
-            val body = response.body?.string()
+                val response = httpClient.newCall(request).execute()
+                val code = response.code
+                val responseBody = response.body?.string()
 
-            if (code == 404) {
-                return@withContext UpdateCheckResult.Error(
-                    "Keine Releases im GitHub Repository '$cleanRepo' gefunden (HTTP 404 Not Found).\n\n" +
-                    "Tipp: Erstelle auf GitHub einen Release / Tag für '$cleanRepo' und lade die compilierte .apk als Release-Asset hoch.",
-                    statusCode = 404
-                )
-            } else if (code == 403) {
-                return@withContext UpdateCheckResult.Error(
-                    "GitHub API Rate-Limit erreicht (HTTP 403 Forbidden). Die anonyme API-Anfragegrenze von GitHub wurde vorübergehend erreicht. Bitte versuche es in wenigen Minuten erneut.",
-                    statusCode = 403
-                )
-            } else if (!response.isSuccessful || body.isNullOrEmpty()) {
-                return@withContext UpdateCheckResult.Error(
-                    "GitHub API Fehler: HTTP $code (${response.message.ifEmpty { "Unbekannter Fehler" }}).",
-                    statusCode = code
-                )
+                if (code == 404) {
+                    throw IllegalStateException("HTTP 404: Keine Releases im GitHub Repository '$cleanRepo' gefunden.")
+                } else if (code == 403) {
+                    throw IllegalStateException("HTTP 403: GitHub API Rate-Limit erreicht. Bitte versuche es später erneut.")
+                } else if (!response.isSuccessful || responseBody.isNullOrEmpty()) {
+                    throw java.io.IOException("GitHub API Fehler: HTTP $code (${response.message.ifEmpty { "Fehler" }}).")
+                }
+                responseBody
             }
 
             // Parse response
@@ -125,8 +121,11 @@ object GitHubUpdateManager {
             return@withContext UpdateCheckResult.UpdateAvailable(release)
 
         } catch (e: Exception) {
+            val msg = e.localizedMessage ?: e.message ?: "Keine Internetverbindung"
+            val statusCode = if (msg.contains("404")) 404 else if (msg.contains("403")) 403 else 500
             return@withContext UpdateCheckResult.Error(
-                "Verbindungsfehler beim Abrufen von GitHub: ${e.localizedMessage ?: e.message ?: "Keine Internetverbindung"}"
+                "Fehler beim Abrufen von GitHub nach Wiederholungszyklus: $msg",
+                statusCode = statusCode
             )
         }
     }
@@ -242,44 +241,43 @@ object GitHubUpdateManager {
                 destinationFile.delete()
             }
 
-            val request = Request.Builder()
-                .url(release.downloadUrl)
-                .header("User-Agent", "LabCast-Android-OTA")
-                .build()
+            com.example.network.NetworkRetryPolicy.executeWithConnectionRetry(
+                operationName = "APK-Download (${release.tagName})",
+                maxMinuteCycles = 2
+            ) {
+                val request = Request.Builder()
+                    .url(release.downloadUrl)
+                    .header("User-Agent", "LabCast-Android-OTA")
+                    .build()
 
-            val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(
-                    Exception("Download fehlgeschlagen mit HTTP ${response.code}: ${response.message}")
-                )
-            }
-
-            val responseBody = response.body ?: return@withContext Result.failure(
-                Exception("Leere Server-Antwort beim Herunterladen der APK.")
-            )
-
-            val contentLength = responseBody.contentLength().takeIf { it > 0 } ?: release.assetSizeBytes.takeIf { it > 0 } ?: 25_000_000L
-
-            responseBody.byteStream().use { input ->
-                FileOutputStream(destinationFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var totalRead = 0L
-
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        totalRead += bytesRead
-                        val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
-                        onProgress(progress)
-                    }
-                    output.flush()
+                val response = httpClient.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    throw java.io.IOException("Download fehlgeschlagen mit HTTP ${response.code}: ${response.message}")
                 }
-            }
 
-            if (!destinationFile.exists() || destinationFile.length() < 1024) {
-                return@withContext Result.failure(
-                    Exception("Heruntergeladene Datei ist unvollständig oder ungültig (${destinationFile.length()} Bytes).")
-                )
+                val responseBody = response.body ?: throw java.io.IOException("Leere Server-Antwort beim Herunterladen der APK.")
+
+                val contentLength = responseBody.contentLength().takeIf { it > 0 } ?: release.assetSizeBytes.takeIf { it > 0 } ?: 25_000_000L
+
+                responseBody.byteStream().use { input ->
+                    FileOutputStream(destinationFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalRead = 0L
+
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+                            val progress = (totalRead.toFloat() / contentLength.toFloat()).coerceIn(0f, 1f)
+                            onProgress(progress)
+                        }
+                        output.flush()
+                    }
+                }
+
+                if (!destinationFile.exists() || destinationFile.length() < 1024) {
+                    throw java.io.IOException("Heruntergeladene Datei ist unvollständig (${destinationFile.length()} Bytes).")
+                }
             }
 
             Result.success(destinationFile)

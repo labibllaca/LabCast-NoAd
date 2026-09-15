@@ -54,6 +54,9 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
     val updateProgress by viewModel.updateDownloadProgress.collectAsStateWithLifecycle()
     val lastCheckedTime by viewModel.lastCheckedTime.collectAsStateWithLifecycle()
     val updateErrorMessage by viewModel.updateErrorMessage.collectAsStateWithLifecycle()
+    val isNetworkOnline by viewModel.isNetworkOnline.collectAsStateWithLifecycle()
+    val networkConnectionType by viewModel.networkConnectionType.collectAsStateWithLifecycle()
+    val networkRetryStatus by viewModel.networkRetryStatus.collectAsStateWithLifecycle()
 
     var repoInput by remember(gitHubRepo) { mutableStateOf(gitHubRepo) }
 
@@ -783,6 +786,112 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             ),
                             modifier = Modifier.testTag("toggle_offline_mode_settings")
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Tiered Network Retry Schedule Information Box
+                    Surface(
+                        color = colors.inputBg,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, colors.itemBorder),
+                        modifier = Modifier.fillMaxWidth().testTag("network_retry_info_box")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (isNetworkOnline) Icons.Default.Wifi else Icons.Default.WifiOff,
+                                        contentDescription = null,
+                                        tint = if (isNetworkOnline) CyberGreen else ErrorRed,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Verbindungsstatus & Retry-Logik",
+                                        color = colors.textPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Surface(
+                                    color = (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.3f))
+                                ) {
+                                    Text(
+                                        text = if (isNetworkOnline) networkConnectionType else "Offline",
+                                        color = if (isNetworkOnline) CyberGreen else ErrorRed,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Automatisches 3-Stufen Wiederholungsschema:",
+                                color = colors.textPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "• Phase 1: 3x versuchen im 10-Sekunden-Takt\n• Phase 2: Nach 20 Sek. Pause erneut 3x versuchen\n• Phase 3: Bei anhaltendem Offline 3x jede Minute",
+                                color = colors.textMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+
+                            networkRetryStatus?.let { status ->
+                                if (status.phase != com.example.network.RetryPhase.IDLE && status.phase != com.example.network.RetryPhase.CONNECTED) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Surface(
+                                        color = Color(0xFFFF9900).copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, Color(0xFFFF9900).copy(alpha = 0.4f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "AKTIVER RETRY: ${status.phase.label}",
+                                                    color = Color(0xFFFF9900),
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Black
+                                                )
+                                                Text(
+                                                    text = status.userFriendlyMessage,
+                                                    color = colors.textPrimary,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { viewModel.triggerImmediateNetworkRetry() },
+                                                modifier = Modifier.size(28.dp).testTag("btn_settings_retry_now")
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Refresh,
+                                                    contentDescription = "Sofort wiederholen",
+                                                    tint = Color(0xFFFF9900),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

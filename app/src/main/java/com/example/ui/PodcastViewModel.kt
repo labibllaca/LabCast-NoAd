@@ -503,6 +503,20 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _updateErrorMessage = MutableStateFlow<String?>(null)
     val updateErrorMessage: StateFlow<String?> = _updateErrorMessage.asStateFlow()
 
+    // Network Connectivity & Retry Policy State Flows
+    private val connectivityMonitor = com.example.network.NetworkConnectivityMonitor.getInstance(application)
+    val isNetworkOnline: StateFlow<Boolean> = connectivityMonitor.isConnected
+    val networkConnectionType: StateFlow<String> = connectivityMonitor.connectionType
+    val networkRetryStatus: StateFlow<com.example.network.NetworkRetryStatus?> =
+        com.example.network.NetworkRetryPolicy.globalStatus
+
+    fun triggerImmediateNetworkRetry() {
+        com.example.network.NetworkRetryPolicy.triggerImmediateRetry()
+        viewModelScope.launch {
+            repository.addSyncLog("Netzwerk Manager", "Manuelle Sofort-Wiederholung (Retry Now) ausgelöst.")
+        }
+    }
+
     val currentAppVersion = "v${com.example.BuildConfig.VERSION_NAME}"
     val currentBuildNumber = com.example.BuildConfig.VERSION_CODE
 
@@ -641,7 +655,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
                 Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Fetching latest episodes for '${podcast.title}' from feed: $resolvedFeedUrl")
                 val feedResult = withContext(Dispatchers.IO) {
-                    PodcastApiClient.fetchFeedDetails(resolvedFeedUrl, podcast.title)
+                    PodcastApiClient.fetchFeedDetails(resolvedFeedUrl, podcast.title, enableRetry = true)
                 }
 
                 var currentPod = podcast
@@ -1123,7 +1137,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             // Fetch feed details first to capture channel artwork & episodes
             val feedResult = withContext(Dispatchers.IO) {
-                PodcastApiClient.fetchFeedDetails(result.feedUrl, result.title)
+                PodcastApiClient.fetchFeedDetails(result.feedUrl, result.title, enableRetry = true)
             }
             val resolvedCoverUrl = feedResult.channelCoverUrl ?: result.coverUrl
 

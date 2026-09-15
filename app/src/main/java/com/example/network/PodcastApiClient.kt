@@ -174,33 +174,63 @@ object PodcastApiClient {
 
     private val feedCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
 
-    private fun getOrFetchFeedXml(feedUrl: String): String? {
+    suspend fun getOrFetchFeedXml(feedUrl: String, enableRetry: Boolean = false): String? {
         if (feedUrl.isBlank() || !feedUrl.startsWith("http")) return null
         val now = System.currentTimeMillis()
         val cached = feedCache[feedUrl]
         if (cached != null && (now - cached.first) < 5 * 60 * 1000L) {
             return cached.second
         }
-        return try {
-            val request = Request.Builder()
-                .url(feedUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
-                .build()
-            val response = client.newCall(request).execute()
-            if (response.isSuccessful) {
-                val xml = response.body?.string()
-                if (!xml.isNullOrEmpty()) {
-                    feedCache[feedUrl] = Pair(now, xml)
-                    xml
+
+        if (!enableRetry) {
+            return try {
+                val request = Request.Builder()
+                    .url(feedUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
+                    .build()
+                val response = client.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val xml = response.body?.string()
+                    if (!xml.isNullOrEmpty()) {
+                        feedCache[feedUrl] = Pair(now, xml)
+                        xml
+                    } else null
                 } else null
-            } else null
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        return try {
+            NetworkRetryPolicy.executeWithConnectionRetry(
+                operationName = "RSS-Feed ($feedUrl)"
+            ) {
+                val request = Request.Builder()
+                    .url(feedUrl)
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
+                    .build()
+                val response = client.newCall(request).execute()
+                if (!response.isSuccessful) {
+                    throw java.io.IOException("HTTP ${response.code}: ${response.message}")
+                }
+                val xml = response.body?.string()
+                if (xml.isNullOrEmpty()) {
+                    throw java.io.IOException("Leere Antwort vom Podcast Feed")
+                }
+                feedCache[feedUrl] = Pair(System.currentTimeMillis(), xml)
+                xml
+            }
         } catch (e: Exception) {
             null
         }
     }
 
-    suspend fun fetchFeedDetails(feedUrl: String, podcastTitle: String = ""): FeedResult {
-        val xml = getOrFetchFeedXml(feedUrl)
+    suspend fun fetchFeedDetails(
+        feedUrl: String,
+        podcastTitle: String = "",
+        enableRetry: Boolean = false
+    ): FeedResult {
+        val xml = getOrFetchFeedXml(feedUrl, enableRetry = enableRetry)
         if (!xml.isNullOrEmpty()) {
             val channelImgRegex = Regex("""(?:<itunes:image[^>]*href=["']([^"']+)["']|<image>\s*<url>(.*?)</url>)""", RegexOption.IGNORE_CASE)
             val channelTitleRegex = Regex("""<channel[^>]*>.*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))

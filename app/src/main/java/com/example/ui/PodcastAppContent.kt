@@ -208,6 +208,8 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     val isSyncing by viewModel.isSyncing.collectAsStateWithLifecycle()
     val isPlayerExpanded by viewModel.isPlayerExpanded.collectAsStateWithLifecycle()
     val sponsorSkipEvent by viewModel.sponsorSkipEvent.collectAsStateWithLifecycle()
+    val networkRetryStatus by viewModel.networkRetryStatus.collectAsStateWithLifecycle()
+    val isNetworkOnline by viewModel.isNetworkOnline.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -346,6 +348,105 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 1.sp
                             )
+                        }
+                    }
+                }
+
+                // Dynamic Network Retry & Connection State Banner
+                val retryActive = networkRetryStatus != null &&
+                        networkRetryStatus?.phase != com.example.network.RetryPhase.IDLE &&
+                        networkRetryStatus?.phase != com.example.network.RetryPhase.CONNECTED &&
+                        networkRetryStatus?.phase != com.example.network.RetryPhase.CANCELLED
+
+                AnimatedVisibility(
+                    visible = retryActive && !isOfflineModeOnly,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut()
+                ) {
+                    networkRetryStatus?.let { status ->
+                        val phaseColor = when (status.phase) {
+                            com.example.network.RetryPhase.PHASE_1_TEN_SEC -> Color(0xFFFF9900)
+                            com.example.network.RetryPhase.PHASE_2_AFTER_20_SEC -> Color(0xFFFF6600)
+                            com.example.network.RetryPhase.PHASE_3_MINUTE_CYCLE -> Color(0xFFE53935)
+                            com.example.network.RetryPhase.FAILED -> ErrorRed
+                            else -> CyberGreen
+                        }
+
+                        Surface(
+                            color = phaseColor.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, phaseColor.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().testTag("network_retry_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (status.isWaitingCountdown) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            color = phaseColor,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.Sync,
+                                            contentDescription = "Verbindungsversuch",
+                                            tint = phaseColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = status.phase.label.uppercase(),
+                                            color = phaseColor,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Black,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                        Text(
+                                            text = status.userFriendlyMessage,
+                                            color = colors.textPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                Button(
+                                    onClick = { viewModel.triggerImmediateNetworkRetry() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = phaseColor.copy(alpha = 0.85f),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(28.dp).testTag("btn_instant_retry")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Jetzt erneut versuchen",
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Sofort",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
