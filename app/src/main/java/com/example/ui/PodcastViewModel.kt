@@ -503,8 +503,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _updateErrorMessage = MutableStateFlow<String?>(null)
     val updateErrorMessage: StateFlow<String?> = _updateErrorMessage.asStateFlow()
 
-    val currentAppVersion = "v1.2.0"
-    val currentBuildNumber = 103
+    val currentAppVersion = "v${com.example.BuildConfig.VERSION_NAME}"
+    val currentBuildNumber = com.example.BuildConfig.VERSION_CODE
 
     private var playbackJob: Job? = null
 

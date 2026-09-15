@@ -49,4 +49,20 @@ class ExampleUnitTest {
     assertEquals(90L, segments[1].startTimeSeconds)
     assertEquals(225L, segments[2].startTimeSeconds)
   }
+
+  @Test
+  fun testIncrementalVersionCheck() {
+    // Test newer patch versions
+    assertTrue(com.example.util.GitHubUpdateManager.isNewerVersion("v1.2.2", "v1.2.1"))
+    assertTrue(com.example.util.GitHubUpdateManager.isNewerVersion("1.3.0", "v1.2.1"))
+    assertTrue(com.example.util.GitHubUpdateManager.isNewerVersion("v2.0.0", "v1.2.1"))
+    assertTrue(com.example.util.GitHubUpdateManager.isNewerVersion("v1.2.1.1", "v1.2.1"))
+
+    // Test same or older versions
+    assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.2.1", "v1.2.1"))
+    assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("1.2.1", "1.2.1"))
+    assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.2.0", "v1.2.1"))
+    assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.1.9", "v1.2.1"))
+    assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.0.0", "v1.2.1"))
+  }
 }

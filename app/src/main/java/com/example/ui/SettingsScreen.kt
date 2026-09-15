@@ -56,7 +56,6 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
     val updateErrorMessage by viewModel.updateErrorMessage.collectAsStateWithLifecycle()
 
     var repoInput by remember(gitHubRepo) { mutableStateOf(gitHubRepo) }
-    var showWorkflowCode by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -692,202 +691,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
         }
 
         // ==========================================
-        // SECTION 3: CI/CD PIPELINE WORKFLOW (.github)
-        // ==========================================
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(1.dp, colors.itemBorder),
-                modifier = Modifier.fillMaxWidth().testTag("cicd_pipeline_card")
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Build,
-                                contentDescription = null,
-                                tint = CyberGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "CI/CD Pipeline Automation",
-                                color = colors.textPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                        }
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = CyberGreen.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f))
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(CyberGreen)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Aktiv",
-                                    color = CyberGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Vollständig konfigurierte GitHub Actions Pipeline unter .github/workflows/android-ci-cd.yml für automatisiertes Testen, Bauen und Release-Deployment.",
-                        color = colors.textMuted,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Pipeline Stage Chips
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PipelineStageItem(
-                            stepNumber = "1",
-                            title = "Lint & Unit Tests",
-                            description = "Gradle testDebugUnitTest & Robolectric Validierung",
-                            status = "Passing",
-                            statusColor = CyberGreen
-                        )
-                        PipelineStageItem(
-                            stepNumber = "2",
-                            title = "Debug APK Assembly",
-                            description = "Erstellt Test-Artifacts bei Pull Requests & Commits",
-                            status = "Automated",
-                            statusColor = CyberGreen
-                        )
-                        PipelineStageItem(
-                            stepNumber = "3",
-                            title = "Release Signing & Checksums",
-                            description = "Generiert signierte APKs und SHA-256 Hashes",
-                            status = "Configured",
-                            statusColor = CyberGreen
-                        )
-                        PipelineStageItem(
-                            stepNumber = "4",
-                            title = "GitHub Releases Deployment",
-                            description = "Lädt APKs bei Git-Tags (v*) automatisch hoch",
-                            status = "OTA Ready",
-                            statusColor = CyberGreen
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    // Expand / collapse workflow YAML code button
-                    OutlinedButton(
-                        onClick = { showWorkflowCode = !showWorkflowCode },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
-                        border = BorderStroke(1.dp, colors.itemBorder),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("btn_toggle_cicd_code")
-                    ) {
-                        Icon(
-                            if (showWorkflowCode) Icons.Default.CodeOff else Icons.Default.Code,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (showWorkflowCode) "Workflow-Code ausblenden" else "CI/CD YAML (.github) anzeigen",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    AnimatedVisibility(visible = showWorkflowCode) {
-                        Column {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (colors.isDark) Color(0xFF0D0F14) else Color(0xFFF1F5F9),
-                                border = BorderStroke(1.dp, colors.itemBorder),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = ".github/workflows/android-ci-cd.yml",
-                                            color = CyberGreen,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "YAML",
-                                            color = colors.textMuted,
-                                            fontSize = 10.sp
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    Text(
-                                        text = """
-name: Android CI/CD Pipeline
-on:
-  push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch:
-
-jobs:
-  test-and-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-      - run: ./gradlew testDebugUnitTest
-  
-  build-and-publish-release:
-    needs: test-and-lint
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - run: ./gradlew assembleRelease
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: app/build/outputs/apk/release/*.apk
-                                        """.trimIndent(),
-                                        color = colors.textPrimary,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // SECTION 4: PLAYBACK & AD-SKIPPER ENGINE
+        // SECTION 3: PLAYBACK & AD-SKIPPER ENGINE
         // ==========================================
         item {
             Card(
@@ -985,7 +789,7 @@ jobs:
         }
 
         // ==========================================
-        // SECTION 5: APP-PROTOKOLLIERUNG & LOGS
+        // SECTION 4: APP-PROTOKOLLIERUNG & LOGS
         // ==========================================
         item {
             var showClearConfirm by remember { mutableStateOf(false) }
@@ -1338,72 +1142,6 @@ fun ThemeOptionChip(
                 text = subtitle,
                 color = colors.textMuted,
                 fontSize = 10.sp
-            )
-        }
-    }
-}
-
-@Composable
-fun PipelineStageItem(
-    stepNumber: String,
-    title: String,
-    description: String,
-    status: String,
-    statusColor: Color
-) {
-    val colors = LocalCustomColors.current
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (colors.isDark) Color(0xFF10131A) else Color(0xFFF8FAFC))
-            .border(1.dp, colors.itemBorder, RoundedCornerShape(10.dp))
-            .padding(10.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(statusColor.copy(alpha = 0.2f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = stepNumber,
-                color = statusColor,
-                fontWeight = FontWeight.Bold,
-                fontSize = 11.sp
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = colors.textPrimary,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = description,
-                color = colors.textMuted,
-                fontSize = 11.sp
-            )
-        }
-
-        Surface(
-            shape = RoundedCornerShape(6.dp),
-            color = statusColor.copy(alpha = 0.12f),
-            border = BorderStroke(1.dp, statusColor.copy(alpha = 0.3f))
-        ) {
-            Text(
-                text = status,
-                color = statusColor,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
             )
         }
     }

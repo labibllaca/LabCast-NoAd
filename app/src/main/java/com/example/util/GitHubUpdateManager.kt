@@ -112,11 +112,10 @@ object GitHubUpdateManager {
 
             val release = parseReleaseObject(cleanRepo, releaseObj)
 
-            // Compare version tag with current version
-            val normalizedTag = release.tagName.lowercase().removePrefix("v").trim()
-            val normalizedCurrent = currentVersion.lowercase().removePrefix("v").trim()
+            // Compare version tag with current version using incremental number logic
+            val isNewer = isNewerVersion(release.tagName, currentVersion)
 
-            if (normalizedTag == normalizedCurrent) {
+            if (!isNewer) {
                 return@withContext UpdateCheckResult.UpToDate(
                     latestTag = release.tagName,
                     message = "App ist auf dem neuesten Stand ($currentVersion)."
@@ -129,6 +128,44 @@ object GitHubUpdateManager {
             return@withContext UpdateCheckResult.Error(
                 "Verbindungsfehler beim Abrufen von GitHub: ${e.localizedMessage ?: e.message ?: "Keine Internetverbindung"}"
             )
+        }
+    }
+
+    /**
+     * Compares remote release tag with local current version incrementally.
+     * Supports formats like v1.2.1, 1.3, v2.0.0-rc1, etc.
+     */
+    fun isNewerVersion(remoteTag: String, currentVersion: String): Boolean {
+        val remoteParts = extractVersionNumbers(remoteTag)
+        val currentParts = extractVersionNumbers(currentVersion)
+
+        val maxLen = maxOf(remoteParts.size, currentParts.size)
+        if (maxLen == 0) {
+            // Fallback to strict string difference if no numbers parsed
+            val normR = remoteTag.lowercase().removePrefix("v").trim()
+            val normC = currentVersion.lowercase().removePrefix("v").trim()
+            return normR != normC && normR.isNotBlank()
+        }
+
+        for (i in 0 until maxLen) {
+            val r = remoteParts.getOrElse(i) { 0 }
+            val c = currentParts.getOrElse(i) { 0 }
+            if (r > c) return true
+            if (r < c) return false
+        }
+        return false
+    }
+
+    private fun extractVersionNumbers(versionStr: String): List<Int> {
+        val clean = versionStr.lowercase()
+            .removePrefix("v")
+            .removePrefix("release-")
+            .removePrefix("release_")
+            .split("-")[0]
+            .split("+")[0]
+            .trim()
+        return clean.split(".").mapNotNull { part ->
+            part.filter { it.isDigit() }.toIntOrNull()
         }
     }
 
