@@ -311,6 +311,122 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _isOfflineModeOnly = MutableStateFlow(false)
     val isOfflineModeOnly: StateFlow<Boolean> = _isOfflineModeOnly.asStateFlow()
 
+    // Logging & Diagnostics Setting
+    private val _isLoggingEnabled = MutableStateFlow(true)
+    val isLoggingEnabled: StateFlow<Boolean> = _isLoggingEnabled.asStateFlow()
+
+    private val _logFilterTag = MutableStateFlow("ALL")
+    val logFilterTag: StateFlow<String> = _logFilterTag.asStateFlow()
+
+    fun setLoggingEnabled(enabled: Boolean) {
+        _isLoggingEnabled.value = enabled
+        viewModelScope.launch {
+            if (enabled) {
+                repository.addSyncLog("Settings", "App-Logging aktiviert (Diagnose & Systemprotokollierung).")
+            } else {
+                repository.addSyncLog("Settings", "App-Logging deaktiviert.")
+            }
+        }
+    }
+
+    fun setLogFilterTag(tag: String) {
+        _logFilterTag.value = tag
+    }
+
+    fun clearAllLogs() {
+        viewModelScope.launch {
+            repository.clearSyncLogs()
+            _sponsorSkipEvent.value = "Logs erfolgreich geleert."
+        }
+    }
+
+    fun addManualLogEntry(tag: String, message: String) {
+        if (!_isLoggingEnabled.value) return
+        viewModelScope.launch {
+            repository.addSyncLog(tag, message)
+        }
+    }
+
+    // Sleep Timer / Countdown State (15, 30, 45, custom minutes)
+    private val _sleepTimerRemainingSeconds = MutableStateFlow<Long?>(null)
+    val sleepTimerRemainingSeconds: StateFlow<Long?> = _sleepTimerRemainingSeconds.asStateFlow()
+
+    private val _sleepTimerDurationMinutes = MutableStateFlow<Int?>(null)
+    val sleepTimerDurationMinutes: StateFlow<Int?> = _sleepTimerDurationMinutes.asStateFlow()
+
+    private var sleepTimerJob: Job? = null
+
+    fun setSleepTimer(minutes: Int) {
+        sleepTimerJob?.cancel()
+        if (minutes <= 0) {
+            cancelSleepTimer()
+            return
+        }
+        _sleepTimerDurationMinutes.value = minutes
+        val totalSec = minutes * 60L
+        _sleepTimerRemainingSeconds.value = totalSec
+
+        val msg = "Sleep Timer auf $minutes Minuten gesetzt."
+        _sponsorSkipEvent.value = msg
+        if (_isLoggingEnabled.value) {
+            viewModelScope.launch {
+                repository.addSyncLog("Sleep Timer", "Countdown gestartet: $minutes min ($totalSec s)")
+            }
+        }
+
+        sleepTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000L)
+                val current = _sleepTimerRemainingSeconds.value ?: break
+                if (current <= 1L) {
+                    _sleepTimerRemainingSeconds.value = 0L
+                    // Timer expired: stop audio and pause
+                    pausePlayback()
+                    _sponsorSkipEvent.value = "⏱ Sleep Timer abgelaufen: Wiedergabe pausiert."
+                    if (_isLoggingEnabled.value) {
+                        repository.addSyncLog("Sleep Timer", "Countdown beendet -> Audio automatisch pausiert.")
+                    }
+                    delay(800L)
+                    _sleepTimerRemainingSeconds.value = null
+                    _sleepTimerDurationMinutes.value = null
+                    break
+                } else {
+                    _sleepTimerRemainingSeconds.value = current - 1L
+                }
+            }
+        }
+    }
+
+    fun addSleepTimerMinutes(extraMinutes: Int) {
+        val currentRemaining = _sleepTimerRemainingSeconds.value ?: 0L
+        val newRemainingSec = currentRemaining + (extraMinutes * 60L)
+        val newMinutes = ((newRemainingSec + 59) / 60).toInt()
+        setSleepTimer(newMinutes)
+    }
+
+    fun setSleepTimerEndOfEpisode() {
+        val ep = _currentPlayingEpisode.value ?: return
+        val currentMs = _playbackPositionMs.value
+        val totalMs = ep.durationSeconds * 1000L
+        val remainingMs = (totalMs - currentMs).coerceAtLeast(10000L)
+        val minutes = ((remainingMs / 1000L) / 60L).toInt().coerceAtLeast(1)
+        setSleepTimer(minutes)
+        _sponsorSkipEvent.value = "Sleep Timer: Am Ende der Episode anhalten (~$minutes Min)"
+    }
+
+    fun cancelSleepTimer() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _sleepTimerRemainingSeconds.value = null
+        _sleepTimerDurationMinutes.value = null
+        _sponsorSkipEvent.value = "Sleep Timer deaktiviert."
+        if (_isLoggingEnabled.value) {
+            viewModelScope.launch {
+                repository.addSyncLog("Sleep Timer", "Countdown abgebrochen.")
+            }
+        }
+    }
+
     // Navigation and Detail States
     private val _activeTab = MutableStateFlow(Tab.DISCOVER)
     val activeTab: StateFlow<Tab> = _activeTab.asStateFlow()
@@ -768,6 +884,19 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             } finally {
                 delay(350)
                 _isTranscriptRefreshing.value = false
+            }
+        }
+    }
+
+    fun pausePlayback() {
+        val current = _currentPlayingEpisode.value ?: return
+        if (_isPlaying.value) {
+            _isPlaying.value = false
+            audioManager.pause()
+            stopPlaybackJob()
+            viewModelScope.launch {
+                repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
+                repository.addSyncLog("Pixel 9 Pro (This Device)", "Paused '${current.title}'")
             }
         }
     }

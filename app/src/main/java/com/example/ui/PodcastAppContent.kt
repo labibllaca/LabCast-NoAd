@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -2777,6 +2778,10 @@ fun FullPlayerScreen(
     var showChaptersSheet by remember { mutableStateOf(false) }
     var showTranscriptSheet by remember { mutableStateOf(false) }
     var showDescriptionSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
+
+    val sleepTimerRemainingSec by viewModel.sleepTimerRemainingSeconds.collectAsStateWithLifecycle()
+    val sleepTimerDurationMin by viewModel.sleepTimerDurationMinutes.collectAsStateWithLifecycle()
 
     if (episode == null) return
 
@@ -2919,6 +2924,42 @@ fun FullPlayerScreen(
                             Text(
                                 text = "Transcript",
                                 color = if (transcriptSegments.isNotEmpty()) adAccent else colors.textMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
+                    // Sleep Timer / Countdown button in header
+                    val isTimerActive = sleepTimerRemainingSec != null
+                    Surface(
+                        onClick = { showSleepTimerSheet = true },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isTimerActive) (if (colors.isDark) CyberGreen.copy(alpha = 0.2f) else LightPrimary.copy(alpha = 0.15f)) else colors.cardBackground,
+                        border = BorderStroke(1.dp, if (isTimerActive) (if (colors.isDark) CyberGreen else LightPrimary) else colors.itemBorder),
+                        modifier = Modifier.testTag("player_sleep_timer_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Timer,
+                                contentDescription = "Sleep Timer",
+                                tint = if (isTimerActive) primaryAccent else colors.textMuted,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            val timerLabel = if (isTimerActive) {
+                                val m = (sleepTimerRemainingSec!! + 59) / 60
+                                "${m}m"
+                            } else {
+                                "Timer"
+                            }
+                            Text(
+                                text = timerLabel,
+                                color = if (isTimerActive) primaryAccent else colors.textMuted,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
@@ -3289,6 +3330,63 @@ fun FullPlayerScreen(
                         fontSize = 11.sp
                     )
                 }
+
+                // Active Sleep Timer Live Countdown Pill
+                if (sleepTimerRemainingSec != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    val sec = sleepTimerRemainingSec!!
+                    val m = sec / 60
+                    val s = sec % 60
+                    val countdownStr = String.format("%02d:%02d", m, s)
+                    Surface(
+                        onClick = { showSleepTimerSheet = true },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (colors.isDark) DarkCharcoal else LightCard,
+                        border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth().testTag("active_sleep_timer_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.HourglassTop,
+                                    contentDescription = null,
+                                    tint = primaryAccent,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Timer: $countdownStr verbleibend",
+                                    color = colors.textPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = { viewModel.addSleepTimerMinutes(5) },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("+5m", color = primaryAccent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                                TextButton(
+                                    onClick = { viewModel.cancelSleepTimer() },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(22.dp)
+                                ) {
+                                    Text("Stop", color = ErrorRed, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Player Media Controls
@@ -3463,6 +3561,14 @@ fun FullPlayerScreen(
                     viewModel.refreshEpisodeMetadataNow(episode!!)
                 },
                 onDismiss = { showDescriptionSheet = false }
+            )
+        }
+
+        // Sleep Timer / Countdown Modal Bottom Sheet
+        if (showSleepTimerSheet) {
+            SleepTimerBottomSheet(
+                viewModel = viewModel,
+                onDismiss = { showSleepTimerSheet = false }
             )
         }
     }
@@ -4557,6 +4663,470 @@ fun ChaptersBottomSheet(
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Black,
                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SleepTimerBottomSheet(
+    viewModel: PodcastViewModel,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalCustomColors.current
+    val primaryAccent = if (colors.isDark) CyberGreen else LightPrimary
+    val primaryAccentGlow = if (colors.isDark) CyberGreenGlow else LightPrimary
+
+    val sleepTimerRemainingSec by viewModel.sleepTimerRemainingSeconds.collectAsStateWithLifecycle()
+    val sleepTimerDurationMin by viewModel.sleepTimerDurationMinutes.collectAsStateWithLifecycle()
+
+    var isCustomInputVisible by remember { mutableStateOf(false) }
+    var customMinutesText by remember { mutableStateOf("20") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = colors.cardBackground,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(color = colors.itemBorder)
+        },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag("sleep_timer_bottom_sheet")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(primaryAccent.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Timer,
+                            contentDescription = null,
+                            tint = primaryAccent,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "SLEEP TIMER / COUNTDOWN",
+                            color = colors.textPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Automatisches Pausieren nach Ablauf",
+                            color = colors.textMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("close_sleep_timer_sheet")
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = colors.textMuted
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Active Countdown Card (if running)
+            if (sleepTimerRemainingSec != null) {
+                val sec = sleepTimerRemainingSec!!
+                val m = sec / 60
+                val s = sec % 60
+                val formattedTime = String.format("%02d:%02d", m, s)
+
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
+                    border = BorderStroke(1.5.dp, primaryAccent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("active_timer_card")
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Default.HourglassTop,
+                                contentDescription = null,
+                                tint = primaryAccent,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Timer aktiv",
+                                color = primaryAccent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = formattedTime,
+                            color = colors.textPrimary,
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            letterSpacing = 2.sp
+                        )
+
+                        Text(
+                            text = "Wiedergabe pausiert in $m Minuten und $s Sekunden",
+                            color = colors.textMuted,
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Actions: +5m, +15m, Stop Timer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.addSleepTimerMinutes(5) },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryAccent),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("btn_timer_plus_5")
+                            ) {
+                                Text("+5 Min", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { viewModel.addSleepTimerMinutes(15) },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, primaryAccent.copy(alpha = 0.6f)),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryAccent),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("btn_timer_plus_15")
+                            ) {
+                                Text("+15 Min", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    viewModel.cancelSleepTimer()
+                                    onDismiss()
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ErrorRed, contentColor = Color.White),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f).testTag("btn_timer_cancel")
+                            ) {
+                                Text("Stoppen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = colors.itemBorder.copy(alpha = 0.5f))
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            Text(
+                text = "TIMER WÄHLEN",
+                color = colors.textMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Preset Grid: 15 min, 30 min, 45 min
+            val presets = listOf(
+                15 to "15 Minuten",
+                30 to "30 Minuten",
+                45 to "45 Minuten"
+            )
+
+            presets.forEach { (mins, label) ->
+                val isCurrentPreset = sleepTimerDurationMin == mins && sleepTimerRemainingSec != null
+
+                Card(
+                    onClick = {
+                        viewModel.setSleepTimer(mins)
+                        onDismiss()
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isCurrentPreset) primaryAccent.copy(alpha = 0.15f) else (if (colors.isDark) DarkCharcoal.copy(alpha = 0.7f) else LightCard)
+                    ),
+                    border = BorderStroke(
+                        width = if (isCurrentPreset) 1.5.dp else 1.dp,
+                        color = if (isCurrentPreset) primaryAccent else colors.itemBorder
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("timer_preset_$mins")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Timer,
+                                contentDescription = null,
+                                tint = if (isCurrentPreset) primaryAccent else colors.textMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = label,
+                                color = if (isCurrentPreset) primaryAccent else colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = if (isCurrentPreset) FontWeight.Black else FontWeight.SemiBold
+                            )
+                        }
+
+                        if (isCurrentPreset) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = primaryAccent
+                            ) {
+                                Text(
+                                    text = "AKTIV",
+                                    color = if (colors.isDark) ObsidianBlack else Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        } else {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = colors.textMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // End of Episode option
+            Card(
+                onClick = {
+                    viewModel.setSleepTimerEndOfEpisode()
+                    onDismiss()
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (colors.isDark) DarkCharcoal.copy(alpha = 0.7f) else LightCard
+                ),
+                border = BorderStroke(1.dp, colors.itemBorder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .testTag("timer_preset_end_of_episode")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.DoneAll,
+                            contentDescription = null,
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Bis Ende der Episode",
+                            color = colors.textPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = colors.textMuted,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            // Custom Number Option (Costumer Number / Eigene Minuten)
+            Card(
+                onClick = { isCustomInputVisible = !isCustomInputVisible },
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isCustomInputVisible) (if (colors.isDark) DarkCharcoal else LightCard) else (if (colors.isDark) DarkCharcoal.copy(alpha = 0.7f) else LightCard)
+                ),
+                border = BorderStroke(
+                    width = if (isCustomInputVisible) 1.5.dp else 1.dp,
+                    color = if (isCustomInputVisible) primaryAccent else colors.itemBorder
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .testTag("timer_preset_custom")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = if (isCustomInputVisible) primaryAccent else colors.textMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Eigene Minutenanzahl (Custom)",
+                                color = if (isCustomInputVisible) primaryAccent else colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = if (isCustomInputVisible) FontWeight.Black else FontWeight.SemiBold
+                            )
+                        }
+
+                        Icon(
+                            if (isCustomInputVisible) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = colors.textMuted,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    if (isCustomInputVisible) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Beliebige Dauer in Minuten eingeben:",
+                            color = colors.textMuted,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = customMinutesText,
+                                onValueChange = { input ->
+                                    val filtered = input.filter { it.isDigit() }.take(3)
+                                    customMinutesText = filtered
+                                },
+                                singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                                ),
+                                placeholder = { Text("z.B. 25") },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = primaryAccent,
+                                    unfocusedBorderColor = colors.itemBorder,
+                                    focusedTextColor = colors.textPrimary,
+                                    unfocusedTextColor = colors.textPrimary
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(52.dp)
+                                    .testTag("custom_timer_text_field")
+                            )
+
+                            Button(
+                                onClick = {
+                                    val mins = customMinutesText.toIntOrNull() ?: 15
+                                    if (mins > 0) {
+                                        viewModel.setSleepTimer(mins)
+                                        onDismiss()
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryAccent, contentColor = if (colors.isDark) ObsidianBlack else Color.White),
+                                modifier = Modifier
+                                    .height(52.dp)
+                                    .testTag("start_custom_timer_button")
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Starten", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Quick increment chips for custom input
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            val quickValues = listOf(10, 20, 60, 90, 120)
+                            quickValues.forEach { v ->
+                                Surface(
+                                    onClick = { customMinutesText = v.toString() },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (customMinutesText == v.toString()) primaryAccent.copy(alpha = 0.2f) else colors.cardBackground,
+                                    border = BorderStroke(1.dp, if (customMinutesText == v.toString()) primaryAccent else colors.itemBorder),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                                        Text(
+                                            text = "${v}m",
+                                            color = if (customMinutesText == v.toString()) primaryAccent else colors.textMuted,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }

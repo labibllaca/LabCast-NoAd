@@ -42,6 +42,9 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val isAutoAdSkip by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
     val isOfflineOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
+    val isLoggingEnabled by viewModel.isLoggingEnabled.collectAsStateWithLifecycle()
+    val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
+    val logFilterTag by viewModel.logFilterTag.collectAsStateWithLifecycle()
 
     val gitHubRepo by viewModel.gitHubRepo.collectAsStateWithLifecycle()
     val autoCheckUpdates by viewModel.autoCheckUpdates.collectAsStateWithLifecycle()
@@ -976,6 +979,315 @@ jobs:
                             ),
                             modifier = Modifier.testTag("toggle_offline_mode_settings")
                         )
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // SECTION 5: APP-PROTOKOLLIERUNG & LOGS
+        // ==========================================
+        item {
+            var showClearConfirm by remember { mutableStateOf(false) }
+
+            val filteredLogs = remember(syncLogs, logFilterTag) {
+                if (logFilterTag == "ALL") {
+                    syncLogs
+                } else {
+                    syncLogs.filter { it.deviceName.contains(logFilterTag, ignoreCase = true) || it.action.contains(logFilterTag, ignoreCase = true) }
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, colors.itemBorder),
+                modifier = Modifier.fillMaxWidth().testTag("app_logs_settings_card")
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Terminal,
+                                contentDescription = null,
+                                tint = CyberGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Protokollierung & App-Logs",
+                                color = colors.textPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+
+                        // Log count badge
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isLoggingEnabled) CyberGreen.copy(alpha = 0.15f) else colors.itemBorder.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, if (isLoggingEnabled) CyberGreen.copy(alpha = 0.4f) else colors.itemBorder)
+                        ) {
+                            Text(
+                                text = "${syncLogs.size} Logs",
+                                color = if (isLoggingEnabled) CyberGreen else colors.textMuted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Echtzeit-Diagnose und Aufzeichnung von Wiedergabe-Ereignissen, Sponsor-Skips, Feed-Synchronisationen und System-Status.",
+                        color = colors.textMuted,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Toggle: Logging Enabled
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "App-Logging aktivieren",
+                                color = colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (isLoggingEnabled) "Ereignisse & Aktionen werden protokolliert" else "Protokollierung ist pausiert",
+                                color = colors.textMuted,
+                                fontSize = 12.sp
+                            )
+                        }
+                        Switch(
+                            checked = isLoggingEnabled,
+                            onCheckedChange = { viewModel.setLoggingEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = CyberGreen,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.inputBg
+                            ),
+                            modifier = Modifier.testTag("toggle_logging_enabled")
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Filter Chips Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val filterOptions = listOf(
+                            "ALL" to "Alle",
+                            "Ad" to "Ad-Skip",
+                            "Timer" to "Timer",
+                            "Feed" to "Feed",
+                            "OTA" to "Update"
+                        )
+
+                        filterOptions.forEach { (tagKey, tagLabel) ->
+                            val isSelected = logFilterTag == tagKey
+                            Surface(
+                                onClick = { viewModel.setLogFilterTag(tagKey) },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) CyberGreen.copy(alpha = 0.2f) else colors.cardBackground,
+                                border = BorderStroke(1.dp, if (isSelected) CyberGreen else colors.itemBorder),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) {
+                                    Text(
+                                        text = tagLabel,
+                                        color = if (isSelected) CyberGreen else colors.textMuted,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Log Console Box
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (colors.isDark) Color(0xFF0A0C10) else Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, colors.itemBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 140.dp, max = 260.dp)
+                            .testTag("log_console_box")
+                    ) {
+                        if (filteredLogs.isEmpty()) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        Icons.Default.Notes,
+                                        contentDescription = null,
+                                        tint = colors.textMuted.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (syncLogs.isEmpty()) "Keine Protokolleinträge vorhanden." else "Keine Einträge für diesen Filter.",
+                                        color = colors.textMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(filteredLogs.size) { index ->
+                                    val log = filteredLogs[index]
+                                    val dateStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
+
+                                    val badgeColor = when {
+                                        log.deviceName.contains("Ad", ignoreCase = true) || log.action.contains("Ad", ignoreCase = true) -> Color(0xFFEAB308)
+                                        log.deviceName.contains("Timer", ignoreCase = true) || log.action.contains("Timer", ignoreCase = true) -> Color(0xFF38BDF8)
+                                        log.deviceName.contains("OTA", ignoreCase = true) || log.action.contains("GitHub", ignoreCase = true) -> CyberGreen
+                                        log.action.contains("Error", ignoreCase = true) || log.action.contains("Fehler", ignoreCase = true) -> ErrorRed
+                                        else -> CyberGreen
+                                    }
+
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (colors.isDark) Color(0xFF131720) else Color.White)
+                                            .border(0.5.dp, colors.itemBorder.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                            .padding(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = badgeColor.copy(alpha = 0.15f)
+                                                ) {
+                                                    Text(
+                                                        text = log.deviceName,
+                                                        color = badgeColor,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = dateStr,
+                                                color = colors.textMuted,
+                                                fontSize = 10.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = log.action,
+                                            color = colors.textPrimary,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Log Action Buttons: Copy, Test Log, Clear
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Copy Logs
+                        OutlinedButton(
+                            onClick = {
+                                val allText = syncLogs.joinToString("\n") { log ->
+                                    val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
+                                    "[$time] [${log.deviceName}] ${log.action}"
+                                }
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("LabCast App Logs", allText)
+                                clipboard?.setPrimaryClip(clip)
+                                android.widget.Toast.makeText(context, "${syncLogs.size} Logs kopiert", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
+                            border = BorderStroke(1.dp, colors.itemBorder),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).testTag("btn_copy_logs")
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Kopieren", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // Write Test Log
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.addManualLogEntry("Diagnose", "Manueller Diagnose-Ping ausgelöst. System OK.")
+                                android.widget.Toast.makeText(context, "Test-Log hinzugefügt", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberGreen),
+                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).testTag("btn_test_log")
+                        ) {
+                            Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Test-Log", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // Clear Logs
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearAllLogs()
+                                android.widget.Toast.makeText(context, "Logs geleert", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed),
+                            border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.4f)),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).testTag("btn_clear_logs")
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Leeren", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
