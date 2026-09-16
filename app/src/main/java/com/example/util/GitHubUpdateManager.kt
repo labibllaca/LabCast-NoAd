@@ -288,6 +288,7 @@ object GitHubUpdateManager {
 
     /**
      * Triggers the Android Package Installer for the downloaded APK file.
+     * Ensures all running tasks and previous process locks are cleared.
      */
     fun startPackageInstall(context: Context, apkFile: File): Result<Unit> {
         return try {
@@ -301,6 +302,7 @@ object GitHubUpdateManager {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(apkUri, "application/vnd.android.package-archive")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
 
@@ -308,6 +310,31 @@ object GitHubUpdateManager {
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    /**
+     * Launches the system dialog to uninstall the current app version.
+     * Useful for clean reinstallations when signature or cache conflicts occur.
+     */
+    fun triggerPackageUninstall(context: Context): Result<Unit> {
+        return try {
+            val packageUri = Uri.parse("package:${context.packageName}")
+            val intent = Intent(Intent.ACTION_DELETE, packageUri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            try {
+                val fallbackIntent = Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.parse("package:${context.packageName}")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+                Result.success(Unit)
+            } catch (e2: Exception) {
+                Result.failure(e2)
+            }
         }
     }
 }

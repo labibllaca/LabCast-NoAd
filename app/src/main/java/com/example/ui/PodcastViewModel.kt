@@ -1849,15 +1849,46 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
+        // 1. First stop active audio playback and background jobs completely
+        try {
+            pausePlayback()
+            audioManager.stop()
+            stopPlaybackJob()
+        } catch (e: Throwable) {
+            Log.w("PodcastViewModel", "Error stopping audio prior to install: ${e.message}")
+        }
+
+        // 2. Start Android Package Installer with clean flags
         val result = com.example.util.GitHubUpdateManager.startPackageInstall(context, file)
         if (result.isSuccess) {
             viewModelScope.launch {
-                repository.addSyncLog("GitHub OTA", "Launched Android Package Installer for '${file.name}'")
+                repository.addSyncLog("GitHub OTA", "Audio gestoppt & Android Package Installer für '${file.name}' gestartet.")
             }
         } else {
             val err = result.exceptionOrNull()?.localizedMessage ?: "Fehler beim Starten der Installation"
             _updateStatus.value = UpdateStatus.ERROR
             _updateErrorMessage.value = "Installation fehlgeschlagen: $err"
+        }
+    }
+
+    fun uninstallOldVersion(context: android.content.Context) {
+        // Stop audio playback first
+        try {
+            pausePlayback()
+            audioManager.stop()
+            stopPlaybackJob()
+        } catch (e: Throwable) {
+            Log.w("PodcastViewModel", "Error stopping audio prior to uninstall: ${e.message}")
+        }
+
+        val result = com.example.util.GitHubUpdateManager.triggerPackageUninstall(context)
+        if (result.isSuccess) {
+            viewModelScope.launch {
+                repository.addSyncLog("GitHub OTA", "Deinstallation der alten Version angefordert.")
+            }
+        } else {
+            val err = result.exceptionOrNull()?.localizedMessage ?: "Fehler bei Deinstallation"
+            _updateErrorMessage.value = "Deinstallation konnte nicht geöffnet werden: $err"
         }
     }
 

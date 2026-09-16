@@ -514,58 +514,80 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                     Spacer(modifier = Modifier.height(14.dp))
 
                                     // Action Buttons
-                                    Row(
+                                    Column(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        if (updateStatus == PodcastViewModel.UpdateStatus.READY_TO_INSTALL) {
-                                            Button(
-                                                onClick = {
-                                                    viewModel.installDownloadedApk(context)
-                                                },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = CyberGreen,
-                                                    contentColor = Color.Black
-                                                ),
-                                                shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.weight(1f).testTag("btn_install_apk")
-                                            ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Jetzt installieren", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            if (updateStatus == PodcastViewModel.UpdateStatus.READY_TO_INSTALL) {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.installDownloadedApk(context)
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = CyberGreen,
+                                                        contentColor = Color.Black
+                                                    ),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    modifier = Modifier.weight(1f).testTag("btn_install_apk")
+                                                ) {
+                                                    Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Jetzt installieren", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            } else if (updateStatus != PodcastViewModel.UpdateStatus.DOWNLOADING) {
+                                                Button(
+                                                    onClick = { viewModel.downloadUpdate() },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = CyberGreen,
+                                                        contentColor = Color.Black
+                                                    ),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    modifier = Modifier.weight(1f).testTag("btn_download_update")
+                                                ) {
+                                                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("Update herunterladen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                }
                                             }
-                                        } else if (updateStatus != PodcastViewModel.UpdateStatus.DOWNLOADING) {
-                                            Button(
-                                                onClick = { viewModel.downloadUpdate() },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = CyberGreen,
-                                                    contentColor = Color.Black
+
+                                            // Open on GitHub in browser
+                                            OutlinedButton(
+                                                onClick = {
+                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
+                                                    context.startActivity(intent)
+                                                },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    contentColor = colors.textPrimary
                                                 ),
+                                                border = BorderStroke(1.dp, colors.itemBorder),
                                                 shape = RoundedCornerShape(10.dp),
-                                                modifier = Modifier.weight(1f).testTag("btn_download_update")
+                                                modifier = Modifier.testTag("btn_view_on_github")
                                             ) {
-                                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text("Update herunterladen", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("GitHub", fontSize = 12.sp)
                                             }
                                         }
 
-                                        // Open on GitHub in browser
+                                        // Clean Uninstallation Option for complete fresh installation
                                         OutlinedButton(
                                             onClick = {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(release.htmlUrl))
-                                                context.startActivity(intent)
+                                                viewModel.uninstallOldVersion(context)
                                             },
                                             colors = ButtonDefaults.outlinedButtonColors(
-                                                contentColor = colors.textPrimary
+                                                contentColor = colors.textMuted
                                             ),
                                             border = BorderStroke(1.dp, colors.itemBorder),
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.testTag("btn_view_on_github")
+                                            modifier = Modifier.fillMaxWidth().testTag("btn_uninstall_old_version")
                                         ) {
-                                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("GitHub", fontSize = 12.sp)
+                                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp), tint = colors.textMuted)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Alte Version deinstallieren (Saubere Neuinstallation)", fontSize = 11.sp)
                                         }
                                     }
                                 }
