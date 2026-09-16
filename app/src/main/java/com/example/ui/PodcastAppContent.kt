@@ -1366,11 +1366,14 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
 
         // Description
         item {
-            Text(
+            NotesHyperlinkText(
                 text = podcast.description,
                 color = TextGray,
+                linkColor = CyberGreen,
                 fontSize = 13.sp,
-                lineHeight = 18.sp
+                lineHeight = 18.sp,
+                showQuickLinksBar = false,
+                modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
@@ -3868,11 +3871,14 @@ fun EpisodeDescriptionBottomSheet(
             HorizontalDivider(color = colors.itemBorder.copy(alpha = 0.5f))
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text(
+            NotesHyperlinkText(
                 text = episode.description.ifEmpty { "No show notes available for this episode." },
                 color = colors.textPrimary.copy(alpha = 0.85f),
+                linkColor = primaryAccent,
                 fontSize = 14.sp,
-                lineHeight = 22.sp
+                lineHeight = 22.sp,
+                showQuickLinksBar = true,
+                modifier = Modifier.fillMaxWidth()
             )
         }
     }

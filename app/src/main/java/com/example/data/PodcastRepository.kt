@@ -171,7 +171,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 podcastTitle = "Huberman Lab",
                 podcastCoverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
                 title = "Essentials: Use Sleep to Enhance Learning, Memory & Emotional State | Dr. Gina Poe",
-                description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.",
+                description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.\n\nKey Resources & Scientific References:\n• UCLA Laboratory of Dr. Gina Poe: https://poelab.ucla.edu\n• Huberman Lab Sleep Toolkit: https://hubermanlab.com/toolkit-for-sleep/\n• Research on sleep spindles: https://pubmed.ncbi.nlm.nih.gov/30598539/\n\nEpisode Sponsors:\n• LMNT - Zero-sugar hydration electrolytes: https://drinklmnt.com/huberman\n• Eight Sleep - Smart temperature mattress cover: https://eightsleep.com/huberman\n• AG1 - Daily foundational nutrition drink: https://drinkag1.com/huberman\n\nOfficial Channels:\n• Website: https://hubermanlab.com\n• YouTube: https://www.youtube.com/@hubermanlab",
                 durationSeconds = 2040, // 34 minutes
                 publishDate = "2026-09-03",
                 audioUrl = realAudioUrls[0],
@@ -188,7 +188,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 podcastTitle = "Huberman Lab",
                 podcastCoverUrl = "https://megaphone.imgix.net/podcasts/042e6144-725e-11ec-a75d-c38f702aecad/image/ee4f0b7b466ca35620792970d9bce2d2.jpg?auto=format&fit=crop&w=600&h=600",
                 title = "Master Your Dopamine & Drive for Focus, Motivation & Performance",
-                description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.",
+                description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.\n\nProtocols & Scientific Links:\n• Dopamine Masterclass Summary: https://hubermanlab.com/dopamine/\n• Stanford Medicine Research: https://med.stanford.edu/neurobiology.html\n\nFeatured Partners:\n• Athletic Greens AG1: https://drinkag1.com/huberman\n• InsideTracker Biometrics: https://insidetracker.com/huberman\n\nOfficial Website: https://hubermanlab.com",
                 durationSeconds = 2400, // 40 mins
                 publishDate = "2026-08-27",
                 audioUrl = realAudioUrls[1],
@@ -335,6 +335,17 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                         updatedEp = updatedEp.copy(publishTimestamp = ts)
                         changed = true
                     }
+                }
+                if (ep.id == "ep_huberman_1" && !ep.description.contains("http")) {
+                    updatedEp = updatedEp.copy(
+                        description = "In this Huberman Lab Essentials episode, Dr. Gina Poe, Professor of Integrative Biology and Physiology at UCLA, discusses the architecture of sleep, memory consolidation, and tools to optimize deep recovery.\n\nKey Resources & Scientific References:\n• UCLA Laboratory of Dr. Gina Poe: https://poelab.ucla.edu\n• Huberman Lab Sleep Toolkit: https://hubermanlab.com/toolkit-for-sleep/\n• Research on sleep spindles: https://pubmed.ncbi.nlm.nih.gov/30598539/\n\nEpisode Sponsors:\n• LMNT - Zero-sugar hydration electrolytes: https://drinklmnt.com/huberman\n• Eight Sleep - Smart temperature mattress cover: https://eightsleep.com/huberman\n• AG1 - Daily foundational nutrition drink: https://drinkag1.com/huberman\n\nOfficial Channels:\n• Website: https://hubermanlab.com\n• YouTube: https://www.youtube.com/@hubermanlab"
+                    )
+                    changed = true
+                } else if (ep.id == "ep_huberman_2" && !ep.description.contains("http")) {
+                    updatedEp = updatedEp.copy(
+                        description = "Learn how dopamine governs motivation, energy levels, craving, and neuroplasticity. Dr. Huberman outlines science-backed behavioral and environmental protocols to sustain high drive without burnout.\n\nProtocols & Scientific Links:\n• Dopamine Masterclass Summary: https://hubermanlab.com/dopamine/\n• Stanford Medicine Research: https://med.stanford.edu/neurobiology.html\n\nFeatured Partners:\n• Athletic Greens AG1: https://drinkag1.com/huberman\n• InsideTracker Biometrics: https://insidetracker.com/huberman\n\nOfficial Website: https://hubermanlab.com"
+                    )
+                    changed = true
                 }
                 if (changed) {
                     podcastDao.updateEpisode(updatedEp)

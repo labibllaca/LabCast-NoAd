@@ -81,4 +81,43 @@ class ExampleUnitTest {
     val isTwoDaysExpired = (now - twoDaysOneHourOld) > twoDaysMillis
     assertTrue(isTwoDaysExpired)
   }
+
+  @Test
+  fun testNotesHyperlinkExtraction() {
+    val sampleNotes = """
+      Welcome to the show notes!
+      Check out our sponsor: https://drinkag1.com/huberman and our website at www.hubermanlab.com.
+      Also visit <a href="https://poelab.ucla.edu">Dr. Gina Poe Lab</a> for sleep research.
+      Special deal: <a href="https://eightsleep.com/huberman">Eight Sleep Pod</a> &amp; more.
+    """.trimIndent()
+
+    val links = com.example.ui.NotesHyperlinkParser.extractLinks(sampleNotes)
+    assertTrue("Should extract multiple links", links.size >= 3)
+
+    val urls = links.map { it.url }
+    assertTrue(urls.contains("https://poelab.ucla.edu"))
+    assertTrue(urls.contains("https://eightsleep.com/huberman"))
+    assertTrue(urls.contains("https://drinkag1.com/huberman"))
+    assertTrue(urls.contains("https://www.hubermanlab.com"))
+
+    val titles = links.map { it.title }
+    assertTrue(titles.contains("Dr. Gina Poe Lab"))
+    assertTrue(titles.contains("Eight Sleep Pod"))
+  }
+
+  @Test
+  fun testNotesHyperlinkAnnotatedStringGeneration() {
+    val sampleNotes = "Follow us at https://hubermanlab.com for full notes."
+    val annotated = com.example.ui.NotesHyperlinkParser.parseToAnnotatedString(
+      rawText = sampleNotes,
+      linkColor = androidx.compose.ui.graphics.Color.Green
+    )
+
+    assertEquals("Follow us at https://hubermanlab.com for full notes.", annotated.text)
+    val linkAnnotations = annotated.getLinkAnnotations(0, annotated.length)
+    assertEquals(1, linkAnnotations.size)
+    val firstLink = linkAnnotations[0].item as androidx.compose.ui.text.LinkAnnotation.Url
+    assertEquals("https://hubermanlab.com", firstLink.url)
+  }
 }
+
