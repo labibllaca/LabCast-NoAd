@@ -1633,6 +1633,7 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
 fun DownloadsScreen(viewModel: PodcastViewModel) {
     val downloadedEpisodes by viewModel.downloadedEpisodes.collectAsStateWithLifecycle()
     val isOfflineModeOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
+    val isSmartDownload by viewModel.isSmartDownloadEnabled.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier
@@ -1653,6 +1654,52 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
                 color = TextGray,
                 fontSize = 12.sp
             )
+        }
+
+        // Smart Download Status Indicator
+        if (isSmartDownload) {
+            item {
+                Surface(
+                    color = CyberGreen.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth().testTag("smart_download_info_card")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(CyberGreen.copy(alpha = 0.2f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.AutoMode,
+                                contentDescription = null,
+                                tint = CyberGreen,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Smart Download Aktiv",
+                                color = CyberGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                text = "Aktuelle Wiedergaben werden automatisch geladen und nach 2 Tagen (>48h) gelöscht.",
+                                color = TextGray,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Offline mode setting card

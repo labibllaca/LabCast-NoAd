@@ -34,7 +34,8 @@ data class EpisodeEntity(
     val adTimestampsSeconds: String = "", // e.g. "45,210" for ads at 45s and 210s
     val chapters: String = "", // e.g. "0:Intro|120:Topic 1|480:Topic 2"
     val transcript: String = "", // Timestamped podcast transcript content
-    val publishTimestamp: Long = 0L
+    val publishTimestamp: Long = 0L,
+    val downloadTimestamp: Long = 0L
 )
 
 fun EpisodeEntity.getEffectiveTimestamp(): Long {

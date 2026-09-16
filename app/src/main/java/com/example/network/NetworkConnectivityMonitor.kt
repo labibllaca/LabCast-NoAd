@@ -30,66 +30,87 @@ class NetworkConnectivityMonitor private constructor(context: Context) {
     }
 
     private fun checkInitialConnectivity(): Boolean {
-        val cm = connectivityManager ?: return true
-        val activeNetwork = cm.activeNetwork ?: return false
-        val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
-        val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        updateConnectionType(capabilities)
-        return hasInternet
+        return try {
+            val cm = connectivityManager ?: return true
+            val activeNetwork = cm.activeNetwork ?: return false
+            val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
+            val hasInternet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            updateConnectionType(capabilities)
+            hasInternet
+        } catch (e: Throwable) {
+            Log.w(TAG, "checkInitialConnectivity encountered: ${e.message}")
+            true
+        }
     }
 
     private fun updateConnectionType(capabilities: NetworkCapabilities?) {
-        if (capabilities == null) {
-            _connectionType.value = "Keine Verbindung"
-            return
-        }
-        _connectionType.value = when {
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WLAN"
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobilfunk"
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
-            else -> "Aktiv"
+        try {
+            if (capabilities == null) {
+                _connectionType.value = "Keine Verbindung"
+                return
+            }
+            _connectionType.value = when {
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WLAN"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobilfunk"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
+                else -> "Aktiv"
+            }
+        } catch (e: Throwable) {
+            _connectionType.value = "Aktiv"
         }
     }
 
     private fun registerNetworkCallback() {
-        if (connectivityManager == null) return
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
+        val cm = connectivityManager ?: return
         try {
-            connectivityManager.registerNetworkCallback(
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+
+            cm.registerNetworkCallback(
                 request,
                 object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {
-                        Log.i(TAG, "Network became available. Triggering immediate retry signal.")
-                        _isConnected.value = true
-                        val caps = connectivityManager.getNetworkCapabilities(network)
-                        updateConnectionType(caps)
-                        NetworkRetryPolicy.triggerImmediateRetry()
+                        try {
+                            Log.i(TAG, "Network became available. Triggering immediate retry signal.")
+                            _isConnected.value = true
+                            val caps = cm.getNetworkCapabilities(network)
+                            updateConnectionType(caps)
+                            NetworkRetryPolicy.triggerImmediateRetry()
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "onAvailable error: ${t.message}")
+                        }
                     }
 
                     override fun onLost(network: Network) {
-                        Log.w(TAG, "Network connection lost.")
-                        _isConnected.value = false
-                        _connectionType.value = "Getrennt"
+                        try {
+                            Log.w(TAG, "Network connection lost.")
+                            _isConnected.value = false
+                            _connectionType.value = "Getrennt"
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "onLost error: ${t.message}")
+                        }
                     }
 
                     override fun onCapabilitiesChanged(
                         network: Network,
                         networkCapabilities: NetworkCapabilities
                     ) {
-                        val hasInternet =
-                            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                        _isConnected.value = hasInternet
-                        updateConnectionType(networkCapabilities)
-                        if (hasInternet) {
-                            NetworkRetryPolicy.triggerImmediateRetry()
+                        try {
+                            val hasInternet =
+                                networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            _isConnected.value = hasInternet
+                            updateConnectionType(networkCapabilities)
+                            if (hasInternet) {
+                                NetworkRetryPolicy.triggerImmediateRetry()
+                            }
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "onCapabilitiesChanged error: ${t.message}")
                         }
                     }
                 }
             )
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to register network callback: ${e.message}")
         }
     }

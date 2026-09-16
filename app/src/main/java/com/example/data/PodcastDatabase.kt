@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class], version = 5, exportSchema = false)
+@Database(entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class], version = 6, exportSchema = false)
 abstract class PodcastDatabase : RoomDatabase() {
     abstract fun podcastDao(): PodcastDao
 
@@ -21,6 +21,7 @@ abstract class PodcastDatabase : RoomDatabase() {
                     "podcast_database"
                 )
                 .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
                 instance

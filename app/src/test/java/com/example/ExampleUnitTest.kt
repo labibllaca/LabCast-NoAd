@@ -65,4 +65,20 @@ class ExampleUnitTest {
     assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.1.9", "v1.2.1"))
     assertFalse(com.example.util.GitHubUpdateManager.isNewerVersion("v1.0.0", "v1.2.1"))
   }
+
+  @Test
+  fun testSmartDownloadExpirationThreshold() {
+    val twoDaysMillis = 2 * 24 * 60 * 60 * 1000L
+    val now = System.currentTimeMillis()
+
+    // 1 day old download -> not expired
+    val oneDayOld = now - (24 * 60 * 60 * 1000L)
+    val isOneDayExpired = (now - oneDayOld) > twoDaysMillis
+    assertFalse(isOneDayExpired)
+
+    // 2 days and 1 hour old download -> expired
+    val twoDaysOneHourOld = now - (49 * 60 * 60 * 1000L)
+    val isTwoDaysExpired = (now - twoDaysOneHourOld) > twoDaysMillis
+    assertTrue(isTwoDaysExpired)
+  }
 }

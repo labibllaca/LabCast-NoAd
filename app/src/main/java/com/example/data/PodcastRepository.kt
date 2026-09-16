@@ -34,8 +34,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.clearEpisodeHistory(episodeId)
     }
 
-    suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?) {
-        podcastDao.updateDownloadStatus(episodeId, isDownloaded, localPath)
+    suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?, downloadTimestamp: Long = if (isDownloaded) System.currentTimeMillis() else 0L) {
+        podcastDao.updateDownloadStatus(episodeId, isDownloaded, localPath, downloadTimestamp)
     }
 
     suspend fun updateEpisode(episode: EpisodeEntity) {
@@ -79,19 +79,20 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
 
     // Population of Initial Rich Data
     suspend fun populateInitialDataIfNeeded(context: android.content.Context) {
-        val prefs = context.getSharedPreferences("podcast_app_prefs", android.content.Context.MODE_PRIVATE)
-        val isAlreadySeeded = prefs.getBoolean("initial_podcasts_seeded", false)
+        try {
+            val prefs = context.getSharedPreferences("podcast_app_prefs", android.content.Context.MODE_PRIVATE)
+            val isAlreadySeeded = prefs.getBoolean("initial_podcasts_seeded", false)
 
-        val currentPodcasts = allPodcasts.first()
-        if (isAlreadySeeded || currentPodcasts.isNotEmpty()) {
-            if (!isAlreadySeeded && currentPodcasts.isNotEmpty()) {
-                prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
+            val currentPodcasts = allPodcasts.first()
+            if (isAlreadySeeded || currentPodcasts.isNotEmpty()) {
+                if (!isAlreadySeeded && currentPodcasts.isNotEmpty()) {
+                    prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
+                }
+                healExistingDataIfNeeded()
+                return
             }
-            healExistingDataIfNeeded()
-            return
-        }
 
-        val defaultPodcasts = listOf(
+            val defaultPodcasts = listOf(
             PodcastEntity(
                 id = "pod_huberman_1545953110",
                 title = "Huberman Lab",
@@ -295,6 +296,9 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
 
         podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
+        } catch (e: Exception) {
+            android.util.Log.e("PodcastRepository", "Error seeding initial podcast data: ${e.message}")
+        }
     }
 
     suspend fun healExistingDataIfNeeded() {
@@ -339,6 +343,42 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         } catch (e: Exception) {
             android.util.Log.e("PodcastRepository", "Data healing error: ${e.message}")
         }
+    }
+
+    suspend fun cleanupExpiredDownloads(maxAgeMillis: Long = 2 * 24 * 60 * 60 * 1000L): List<EpisodeEntity> {
+        val cleanedList = mutableListOf<EpisodeEntity>()
+        try {
+            val downloadedEps = podcastDao.getDownloadedEpisodesList()
+            val now = System.currentTimeMillis()
+            for (ep in downloadedEps) {
+                val isExpired = if (ep.downloadTimestamp > 0L) {
+                    (now - ep.downloadTimestamp) > maxAgeMillis
+                } else {
+                    val file = ep.downloadLocalPath?.let { java.io.File(it) }
+                    if (file != null && file.exists()) {
+                        (now - file.lastModified()) > maxAgeMillis
+                    } else false
+                }
+
+                if (isExpired) {
+                    com.example.util.EpisodeDownloader.deleteDownloadedFile(ep.downloadLocalPath)
+                    val updated = ep.copy(
+                        isDownloaded = false,
+                        downloadLocalPath = null,
+                        downloadTimestamp = 0L
+                    )
+                    podcastDao.updateEpisode(updated)
+                    cleanedList.add(ep)
+                    addSyncLog(
+                        "Smart Download",
+                        "Download von '${ep.title}' automatisch gelöscht (Aufbewahrung > 2 Tage überschritten)."
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PodcastRepository", "Failed to cleanup expired downloads: ${e.message}")
+        }
+        return cleanedList
     }
 
     suspend fun validateAndCleanupCorruptDownloads(context: android.content.Context) {

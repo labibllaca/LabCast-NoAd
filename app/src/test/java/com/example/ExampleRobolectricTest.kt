@@ -18,4 +18,13 @@ class ExampleRobolectricTest {
     val appName = context.getString(R.string.app_name)
     assertEquals("LabCast", appName)
   }
+
+  @Test
+  fun `launch MainActivity test`() {
+    androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+      scenario.onActivity { activity ->
+        org.junit.Assert.assertNotNull(activity)
+      }
+    }
+  }
 }

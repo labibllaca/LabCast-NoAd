@@ -41,6 +41,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
 
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val isAutoAdSkip by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val isSmartDownload by viewModel.isSmartDownloadEnabled.collectAsStateWithLifecycle()
     val isOfflineOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
     val isLoggingEnabled by viewModel.isLoggingEnabled.collectAsStateWithLifecycle()
     val syncLogs by viewModel.syncLogs.collectAsStateWithLifecycle()
@@ -752,6 +753,89 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             ),
                             modifier = Modifier.testTag("toggle_auto_ad_skip_settings")
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Smart Download Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Smart Download",
+                                    color = colors.textPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.3f))
+                                ) {
+                                    Text(
+                                        text = if (isSmartDownload) "2 TAGE AUTO-CLEAN" else "INAKTIV",
+                                        color = if (isSmartDownload) CyberGreen else colors.textMuted,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Lädt die aktuell wiedergegebene Episode automatisch herunter und entfernt sie nach 2 Tagen (>48h).",
+                                color = colors.textMuted,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isSmartDownload,
+                            onCheckedChange = { viewModel.setSmartDownloadEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = CyberGreen,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.inputBg
+                            ),
+                            modifier = Modifier.testTag("switch_smart_download")
+                        )
+                    }
+
+                    if (isSmartDownload) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.manualCleanupExpiredDownloads() },
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp).testTag("btn_cleanup_expired_downloads")
+                            ) {
+                                Icon(
+                                    Icons.Default.DeleteSweep,
+                                    contentDescription = "Downloads bereinigen",
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Downloads >2 Tage jetzt prüfen",
+                                    color = CyberGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))

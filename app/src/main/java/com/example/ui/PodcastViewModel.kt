@@ -308,6 +308,65 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Settings
+    private val prefs = getApplication<android.app.Application>().getSharedPreferences("labcast_prefs", android.content.Context.MODE_PRIVATE)
+
+    // Smart Download Setting (automatically download currently playing podcast and purge when older than 2 days)
+    private val _isSmartDownloadEnabled = MutableStateFlow(prefs.getBoolean("pref_smart_download", true))
+    val isSmartDownloadEnabled: StateFlow<Boolean> = _isSmartDownloadEnabled.asStateFlow()
+
+    fun setSmartDownloadEnabled(enabled: Boolean) {
+        _isSmartDownloadEnabled.value = enabled
+        prefs.edit().putBoolean("pref_smart_download", enabled).apply()
+        val statusMsg = if (enabled) "Aktiviert (2-Tage Auto-Löschung)" else "Deaktiviert"
+        _sponsorSkipEvent.value = "Smart Download $statusMsg"
+        viewModelScope.launch {
+            repository.addSyncLog("Smart Download", "Smart Download $statusMsg")
+            if (enabled) {
+                checkAndCleanupExpiredDownloads()
+                val current = _currentPlayingEpisode.value
+                if (current != null && !current.isDownloaded && !_isOfflineModeOnly.value) {
+                    downloadEpisode(current)
+                }
+            }
+        }
+    }
+
+    fun manualCleanupExpiredDownloads() {
+        viewModelScope.launch {
+            val cleaned = repository.cleanupExpiredDownloads()
+            if (cleaned.isNotEmpty()) {
+                _sponsorSkipEvent.value = "Smart Download: ${cleaned.size} abgelaufene Download(s) (>2 Tage) gelöscht."
+                val current = _currentPlayingEpisode.value
+                if (current != null && cleaned.any { it.id == current.id }) {
+                    val refreshed = repository.getEpisodeById(current.id)
+                    if (refreshed != null) {
+                        _currentPlayingEpisode.value = refreshed
+                    }
+                }
+            } else {
+                _sponsorSkipEvent.value = "Keine abgelaufenen Downloads (>2 Tage) vorhanden."
+                repository.addSyncLog("Smart Download", "Bereinigung geprüft: Keine Downloads älter als 2 Tage gefunden.")
+            }
+        }
+    }
+
+    fun checkAndCleanupExpiredDownloads() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleaned = repository.cleanupExpiredDownloads()
+            if (cleaned.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    val current = _currentPlayingEpisode.value
+                    if (current != null && cleaned.any { it.id == current.id }) {
+                        val refreshed = repository.getEpisodeById(current.id)
+                        if (refreshed != null) {
+                            _currentPlayingEpisode.value = refreshed
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private val _isOfflineModeOnly = MutableStateFlow(false)
     val isOfflineModeOnly: StateFlow<Boolean> = _isOfflineModeOnly.asStateFlow()
 
@@ -608,6 +667,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.populateInitialDataIfNeeded(getApplication())
             repository.validateAndCleanupCorruptDownloads(getApplication())
+            checkAndCleanupExpiredDownloads()
         }
     }
 
@@ -775,6 +835,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             checkSponsorAndAdDetection(currentEp.playbackPositionMs)
 
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${currentEp.title}'")
+
+            // Smart Download Trigger: automatically download current playing podcast in background & purge expired (>2 days)
+            if (_isSmartDownloadEnabled.value && !_isOfflineModeOnly.value && !currentEp.isDownloaded) {
+                downloadEpisode(currentEp)
+            }
+            checkAndCleanupExpiredDownloads()
 
             // UPDATE METADATA AFTERWARDS (Description, Chapters, Transcript, Acoustic DAI Waveform)
             refreshMetadataAfterwards(currentEp)
@@ -1243,14 +1309,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 if (EpisodeDownloader.isValidDownloadedFile(filePath)) {
                     val updated = episode.copy(
                         isDownloaded = true,
-                        downloadLocalPath = filePath
+                        downloadLocalPath = filePath,
+                        downloadTimestamp = System.currentTimeMillis()
                     )
                     repository.updateEpisode(updated)
                     successCount++
                 } else {
                     val updated = episode.copy(
                         isDownloaded = false,
-                        downloadLocalPath = null
+                        downloadLocalPath = null,
+                        downloadTimestamp = 0L
                     )
                     repository.updateEpisode(updated)
                 }
@@ -1293,7 +1361,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val sizeMb = String.format(java.util.Locale.US, "%.1f MB", file.length() / (1024.0 * 1024.0))
                 val updated = episode.copy(
                     isDownloaded = true,
-                    downloadLocalPath = filePath
+                    downloadLocalPath = filePath,
+                    downloadTimestamp = System.currentTimeMillis()
                 )
                 repository.updateEpisode(updated)
 
@@ -1305,7 +1374,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 val updated = episode.copy(
                     isDownloaded = false,
-                    downloadLocalPath = null
+                    downloadLocalPath = null,
+                    downloadTimestamp = 0L
                 )
                 repository.updateEpisode(updated)
 
@@ -1321,7 +1391,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun deleteDownload(episode: EpisodeEntity) {
         viewModelScope.launch {
             EpisodeDownloader.deleteDownloadedFile(episode.downloadLocalPath)
-            val updated = episode.copy(isDownloaded = false, downloadLocalPath = null)
+            val updated = episode.copy(isDownloaded = false, downloadLocalPath = null, downloadTimestamp = 0L)
             repository.updateEpisode(updated)
             if (_currentPlayingEpisode.value?.id == episode.id) {
                 _currentPlayingEpisode.value = updated

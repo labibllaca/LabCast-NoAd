@@ -35,6 +35,9 @@ interface PodcastDao {
     @Query("SELECT * FROM episodes WHERE isDownloaded = 1 ORDER BY publishTimestamp DESC, publishDate DESC")
     fun getDownloadedEpisodes(): Flow<List<EpisodeEntity>>
 
+    @Query("SELECT * FROM episodes WHERE isDownloaded = 1")
+    suspend fun getDownloadedEpisodesList(): List<EpisodeEntity>
+
     @Query("SELECT * FROM episodes WHERE id = :id")
     suspend fun getEpisodeById(id: String): EpisodeEntity?
 
@@ -53,8 +56,8 @@ interface PodcastDao {
     @Query("UPDATE episodes SET playbackPositionMs = 0, isCompleted = 0 WHERE id = :episodeId")
     suspend fun clearEpisodeHistory(episodeId: String)
 
-    @Query("UPDATE episodes SET isDownloaded = :isDownloaded, downloadLocalPath = :localPath WHERE id = :episodeId")
-    suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?)
+    @Query("UPDATE episodes SET isDownloaded = :isDownloaded, downloadLocalPath = :localPath, downloadTimestamp = :downloadTimestamp WHERE id = :episodeId")
+    suspend fun updateDownloadStatus(episodeId: String, isDownloaded: Boolean, localPath: String?, downloadTimestamp: Long)
 
     @Query("SELECT * FROM sync_logs ORDER BY timestamp DESC LIMIT 50")
     fun getSyncLogs(): Flow<List<SyncLogEntity>>

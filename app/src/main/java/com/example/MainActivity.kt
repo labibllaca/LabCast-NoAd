@@ -19,22 +19,26 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
-    val imageLoader = ImageLoader.Builder(this)
-      .okHttpClient {
-        OkHttpClient.Builder()
-          .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-              .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
-              .build()
-            chain.proceed(request)
-          }
-          .followRedirects(true)
-          .followSslRedirects(true)
-          .build()
-      }
-      .crossfade(true)
-      .build()
-    Coil.setImageLoader(imageLoader)
+    try {
+      val imageLoader = ImageLoader.Builder(this)
+        .okHttpClient {
+          OkHttpClient.Builder()
+            .addInterceptor { chain ->
+              val request = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
+                .build()
+              chain.proceed(request)
+            }
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+        }
+        .crossfade(true)
+        .build()
+      Coil.setImageLoader(imageLoader)
+    } catch (e: Throwable) {
+      android.util.Log.e("MainActivity", "Error setting Coil imageLoader: ${e.message}")
+    }
 
     setContent {
       val viewModel: PodcastViewModel = viewModel()
