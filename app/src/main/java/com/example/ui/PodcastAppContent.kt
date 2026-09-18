@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import com.example.data.getEffectiveTimestamp
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -2992,6 +2993,11 @@ fun FullPlayerScreen(
                 }
 
                 Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp)
+                        .horizontalScroll(rememberScrollState())
+                        .testTag("player_top_buttons_row"),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
