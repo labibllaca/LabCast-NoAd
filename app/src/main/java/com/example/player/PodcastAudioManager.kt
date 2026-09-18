@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.net.Uri
+import android.os.PowerManager
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +89,9 @@ class PodcastAudioManager(private val context: Context) {
             }
 
             mediaPlayer = MediaPlayer().apply {
+                try {
+                    setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+                } catch (_: Exception) {}
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
@@ -132,6 +136,9 @@ class PodcastAudioManager(private val context: Context) {
     private fun playHttpStream(url: String, startPositionMs: Long) {
         try {
             mediaPlayer = MediaPlayer().apply {
+                try {
+                    setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+                } catch (_: Exception) {}
                 setAudioAttributes(
                     AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)

@@ -119,5 +119,12 @@ class ExampleUnitTest {
     val firstLink = linkAnnotations[0].item as androidx.compose.ui.text.LinkAnnotation.Url
     assertEquals("https://hubermanlab.com", firstLink.url)
   }
+
+  @Test
+  fun testPodcastPlayerHubDefaults() {
+    assertFalse(com.example.player.PodcastPlayerHub.isPlaying.value)
+    assertFalse(com.example.player.PodcastPlayerHub.isBuffering.value)
+    assertEquals(0L, com.example.player.PodcastPlayerHub.currentPositionMs.value)
+  }
 }
 

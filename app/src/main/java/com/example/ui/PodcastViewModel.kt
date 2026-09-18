@@ -8,9 +8,10 @@ import com.example.data.*
 import com.example.network.PodcastApiClient
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
-import com.example.player.PodcastAudioManager
+import com.example.player.PodcastPlayerHub
 import com.example.player.AudioWaveAdDetector
 import com.example.player.AcousticAdSegment
+import com.example.service.PodcastMediaService
 import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,7 +26,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val database = PodcastDatabase.getDatabase(application)
     private val repository = PodcastRepository(database.podcastDao())
-    private val audioManager = PodcastAudioManager(application)
     private val audioWaveDetector = AudioWaveAdDetector()
 
     // UI state flows
@@ -48,7 +48,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
-    val isBuffering: StateFlow<Boolean> = audioManager.isBuffering
+    val isBuffering: StateFlow<Boolean> = PodcastPlayerHub.isBuffering
 
     private val _playbackPositionMs = MutableStateFlow(0L)
     val playbackPositionMs: StateFlow<Long> = _playbackPositionMs.asStateFlow()
@@ -183,7 +183,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun stopAndDismissPlayer() {
         val current = _currentPlayingEpisode.value
         _isPlaying.value = false
-        audioManager.stop()
+        PodcastMediaService.stop(getApplication())
         stopPlaybackJob()
         _isPlayerExpanded.value = false
         _isAdActive.value = false
@@ -657,13 +657,47 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val appLaunchTimestamp = System.currentTimeMillis()
 
     init {
-        audioManager.onErrorListener = { errorMsg ->
+        PodcastPlayerHub.onError = { errorMsg ->
             _isPlaying.value = false
             _sponsorSkipEvent.value = "Audio-Fehler: $errorMsg"
             viewModelScope.launch {
                 repository.addSyncLog("Audio Player", "Error: $errorMsg")
             }
         }
+
+        PodcastPlayerHub.onEpisodeCompleted = {
+            handleEpisodeCompletion()
+        }
+
+        PodcastPlayerHub.onSeekBySystem = { pos ->
+            _playbackPositionMs.value = pos
+            checkSponsorAndAdDetection(pos)
+            _currentPlayingEpisode.value?.let { current ->
+                val durationMs = current.durationSeconds * 1000L
+                viewModelScope.launch {
+                    repository.updateEpisodeProgress(current.id, pos, pos >= durationMs)
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            PodcastPlayerHub.isPlaying.collect { playing ->
+                _isPlaying.value = playing
+                if (playing && playbackJob?.isActive != true) {
+                    startPlaybackJob()
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            PodcastPlayerHub.currentPositionMs.collect { pos ->
+                if (_isPlaying.value && pos > 0) {
+                    _playbackPositionMs.value = pos
+                    checkSponsorAndAdDetection(pos)
+                }
+            }
+        }
+
         viewModelScope.launch {
             repository.populateInitialDataIfNeeded(getApplication())
             repository.validateAndCleanupCorruptDownloads(getApplication())
@@ -823,11 +857,13 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 currentEp.audioUrl
             }
 
-            // Start audio IMMEDIATELY for zero lag & maximum efficacy
-            audioManager.play(audioTarget, currentEp.playbackPositionMs)
-            audioManager.onCompletionListener = {
-                handleEpisodeCompletion()
-            }
+            // Start audio in system control layer (Foreground Service + MediaSession)
+            PodcastMediaService.startPlayback(
+                context = getApplication(),
+                episode = currentEp,
+                audioTarget = audioTarget,
+                startPositionMs = currentEp.playbackPositionMs
+            )
 
             startPlaybackJob()
 
@@ -972,7 +1008,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
         if (_isPlaying.value) {
             _isPlaying.value = false
-            audioManager.pause()
+            PodcastMediaService.pause(getApplication())
             stopPlaybackJob()
             viewModelScope.launch {
                 repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
@@ -985,7 +1021,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
         if (_isPlaying.value) {
             _isPlaying.value = false
-            audioManager.pause()
+            PodcastMediaService.pause(getApplication())
             stopPlaybackJob()
             viewModelScope.launch {
                 repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
@@ -993,7 +1029,17 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
         } else {
             _isPlaying.value = true
-            audioManager.resume()
+            val audioTarget = if (EpisodeDownloader.isValidDownloadedFile(current.downloadLocalPath)) {
+                current.downloadLocalPath!!
+            } else {
+                current.audioUrl
+            }
+            PodcastMediaService.startPlayback(
+                context = getApplication(),
+                episode = current,
+                audioTarget = audioTarget,
+                startPositionMs = _playbackPositionMs.value
+            )
             startPlaybackJob()
             viewModelScope.launch {
                 repository.addSyncLog("Pixel 9 Pro (This Device)", "Resumed '${current.title}'")
@@ -1006,7 +1052,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val durationMs = current.durationSeconds * 1000
         val target = positionMs.coerceIn(0L, durationMs)
         _playbackPositionMs.value = target
-        audioManager.seekTo(target)
+        PodcastMediaService.seekTo(getApplication(), target)
 
         // If seeking directly into sponsor or ad, trigger skipper
         checkSponsorAndAdDetection(target)
@@ -1088,7 +1134,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 _selectedPodcast.value = null
             }
             if (_currentPlayingEpisode.value?.podcastId == podcast.id) {
-                audioManager.stop()
+                PodcastMediaService.stop(getApplication())
                 _isPlaying.value = false
                 _currentPlayingEpisode.value = null
             }
@@ -1491,7 +1537,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 delay(250) // Update position every 250ms for smooth UI progress
                 val current = _currentPlayingEpisode.value ?: break
 
-                if (audioManager.isBuffering.value) {
+                if (PodcastPlayerHub.isBuffering.value) {
                     // Do not increment playback position while player is buffering stream over network
                     if (++loopTickCount % 12 == 0) {
                         val consoleLine = "[PLAYER CONSOLE] Buffering audio stream for '${current.title}'..."
@@ -1501,7 +1547,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     continue
                 }
 
-                val realPosition = audioManager.getCurrentPosition()
+                val realPosition = PodcastPlayerHub.currentPositionMs.value
                 val newPosition = if (realPosition >= 0) realPosition else _playbackPositionMs.value
                 val durationMs = current.durationSeconds * 1000
 
@@ -1531,7 +1577,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val durationMs = current.durationSeconds * 1000
         _playbackPositionMs.value = durationMs
         _isPlaying.value = false
-        audioManager.stop()
+        PodcastMediaService.stop(getApplication())
         stopPlaybackJob()
         viewModelScope.launch {
             repository.updateEpisodeProgress(current.id, durationMs, true)
@@ -1589,7 +1635,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         _adsBlockedCount.value += 1
                         _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
                         _playbackPositionMs.value = targetMs
-                        audioManager.seekTo(targetMs)
+                        PodcastMediaService.seekTo(getApplication(), targetMs)
                         _sponsorSkipEvent.value = "Auto-skipped Sponsor: ${activeChapter.title}"
 
                         viewModelScope.launch {
@@ -1625,7 +1671,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _adsBlockedCount.value += 1
                     _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
                     _playbackPositionMs.value = targetMs
-                    audioManager.seekTo(targetMs)
+                    PodcastMediaService.seekTo(getApplication(), targetMs)
                     _isAdActive.value = false
 
                     _sponsorSkipEvent.value = "Audio-Wave Ad Auto-Skipped: ${acousticAdHit.reason}"
@@ -1674,7 +1720,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         _adsBlockedCount.value += 1
                         _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
                         _playbackPositionMs.value = targetMs
-                        audioManager.seekTo(targetMs)
+                        PodcastMediaService.seekTo(getApplication(), targetMs)
                         _sponsorSkipEvent.value = "Auto-skipped Ad Chunk at ${activeAdSeg.formattedTime()}"
 
                         viewModelScope.launch {
@@ -1727,7 +1773,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _playbackPositionMs.value
         val nextPosition = current + skipAmountMs
         _playbackPositionMs.value = nextPosition
-        audioManager.seekTo(nextPosition)
+        PodcastMediaService.seekTo(getApplication(), nextPosition)
 
         val episode = _currentPlayingEpisode.value
         if (episode != null) {
@@ -1852,7 +1898,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         // 1. First stop active audio playback and background jobs completely
         try {
             pausePlayback()
-            audioManager.stop()
+            PodcastMediaService.stop(getApplication())
             stopPlaybackJob()
         } catch (e: Throwable) {
             Log.w("PodcastViewModel", "Error stopping audio prior to install: ${e.message}")
@@ -1875,7 +1921,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         // Stop audio playback first
         try {
             pausePlayback()
-            audioManager.stop()
+            PodcastMediaService.stop(getApplication())
             stopPlaybackJob()
         } catch (e: Throwable) {
             Log.w("PodcastViewModel", "Error stopping audio prior to uninstall: ${e.message}")
@@ -1901,6 +1947,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     override fun onCleared() {
         super.onCleared()
         stopPlaybackJob()
-        audioManager.release()
+        // Playback remains alive in PodcastMediaService (System Control Layer) during configuration changes / backgrounding
     }
 }
