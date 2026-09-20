@@ -1,8 +1,10 @@
 package com.example.service
 
 import android.app.*
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
@@ -50,6 +52,7 @@ class PodcastMediaService : Service() {
         const val ACTION_FORWARD = "com.example.service.action.FORWARD"
         const val ACTION_REWIND = "com.example.service.action.REWIND"
         const val ACTION_STOP = "com.example.service.action.STOP"
+        const val ACTION_SET_VOLUME = "com.example.service.action.SET_VOLUME"
 
         const val EXTRA_EPISODE_ID = "extra_episode_id"
         const val EXTRA_PODCAST_ID = "extra_podcast_id"
@@ -60,6 +63,7 @@ class PodcastMediaService : Service() {
         const val EXTRA_AUDIO_TARGET = "extra_audio_target"
         const val EXTRA_START_POSITION_MS = "extra_start_position_ms"
         const val EXTRA_SEEK_POSITION = "extra_seek_position"
+        const val EXTRA_VOLUME = "extra_volume"
 
         fun startPlayback(
             context: Context,
@@ -145,6 +149,16 @@ class PodcastMediaService : Service() {
                 ContextCompat.startForegroundService(context, intent)
             } catch (_: Exception) {}
         }
+
+        fun setVolume(context: Context, volume: Float) {
+            val intent = Intent(context, PodcastMediaService::class.java).apply {
+                action = ACTION_SET_VOLUME
+                putExtra(EXTRA_VOLUME, volume)
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {}
+        }
     }
 
     private lateinit var audioManagerEngine: PodcastAudioManager
@@ -163,6 +177,44 @@ class PodcastMediaService : Service() {
     private var currentAudioTarget: String? = null
     private var isServiceForeground = false
     private var wasPlayingBeforeTransientLoss = false
+
+    private var isNoisyReceiverRegistered = false
+    private val becomingNoisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                Log.i(TAG, "[SYSTEM CONTROL LAYER] Headset unplugged / Bluetooth disconnected -> Pausing audio immediately")
+                PodcastPlayerHub.onHeadsetDisconnected?.invoke()
+                pausePlaybackInternal()
+            }
+        }
+    }
+
+    private fun registerNoisyReceiver() {
+        if (!isNoisyReceiverRegistered) {
+            try {
+                registerReceiver(
+                    becomingNoisyReceiver,
+                    IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+                )
+                isNoisyReceiverRegistered = true
+                Log.d(TAG, "Registered ACTION_AUDIO_BECOMING_NOISY receiver")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to register becomingNoisyReceiver: ${e.message}")
+            }
+        }
+    }
+
+    private fun unregisterNoisyReceiver() {
+        if (isNoisyReceiverRegistered) {
+            try {
+                unregisterReceiver(becomingNoisyReceiver)
+                isNoisyReceiverRegistered = false
+                Log.d(TAG, "Unregistered ACTION_AUDIO_BECOMING_NOISY receiver")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to unregister becomingNoisyReceiver: ${e.message}")
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -230,6 +282,11 @@ class PodcastMediaService : Service() {
             }
             ACTION_STOP -> {
                 stopPlaybackInternal()
+            }
+            ACTION_SET_VOLUME -> {
+                val vol = intent.getFloatExtra(EXTRA_VOLUME, 1.0f)
+                audioManagerEngine.setVolume(vol)
+                PodcastPlayerHub.currentVolume.value = vol
             }
         }
 
@@ -356,8 +413,19 @@ class PodcastMediaService : Service() {
     }
 
     private fun setupEngineCallbacks() {
+        PodcastPlayerHub.onSetVolume = { vol ->
+            audioManagerEngine.setVolume(vol)
+            PodcastPlayerHub.currentVolume.value = vol
+        }
+
+        PodcastPlayerHub.onSetSpeed = { spd ->
+            audioManagerEngine.setPlaybackSpeed(spd)
+            PodcastPlayerHub.playbackSpeed.value = spd
+        }
+
         audioManagerEngine.onCompletionListener = {
             Log.i(TAG, "[SYSTEM CONTROL LAYER] Track completed")
+            unregisterNoisyReceiver()
             releaseLocks()
             PodcastPlayerHub.isPlaying.value = false
             updatePlaybackState(PlaybackState.STATE_PAUSED, audioManagerEngine.getCurrentPosition(), 0.0f)
@@ -367,6 +435,7 @@ class PodcastMediaService : Service() {
 
         audioManagerEngine.onErrorListener = { err ->
             Log.e(TAG, "[SYSTEM CONTROL LAYER] Audio Error: $err")
+            unregisterNoisyReceiver()
             releaseLocks()
             PodcastPlayerHub.isPlaying.value = false
             PodcastPlayerHub.isBuffering.value = false
@@ -429,11 +498,13 @@ class PodcastMediaService : Service() {
                 pausePlaybackInternal()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Keep playing at low volume or pause
-                wasPlayingBeforeTransientLoss = PodcastPlayerHub.isPlaying.value
-                pausePlaybackInternal()
+                // Duck audio volume smoothly to 20% for GPS directions or notifications
+                Log.d(TAG, "Audio focus transient loss with duck: lowering volume to 0.2f")
+                audioManagerEngine.setVolume(0.2f)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d(TAG, "Audio focus gained: restoring full volume")
+                audioManagerEngine.setVolume(PodcastPlayerHub.currentVolume.value)
                 if (wasPlayingBeforeTransientLoss) {
                     wasPlayingBeforeTransientLoss = false
                     resumePlaybackInternal()
@@ -454,6 +525,7 @@ class PodcastMediaService : Service() {
 
         requestAudioFocus()
         acquireLocks()
+        registerNoisyReceiver()
 
         // 1. Immediately launch into Foreground Service mode with MediaStyle notification
         val initialNotification = buildNotification(episode, isPlaying = true, artwork = null)
@@ -477,6 +549,7 @@ class PodcastMediaService : Service() {
     private fun resumePlaybackInternal() {
         requestAudioFocus()
         acquireLocks()
+        registerNoisyReceiver()
         audioManagerEngine.resume()
         PodcastPlayerHub.isPlaying.value = true
 
@@ -487,6 +560,7 @@ class PodcastMediaService : Service() {
     }
 
     private fun pausePlaybackInternal() {
+        unregisterNoisyReceiver()
         releaseLocks()
         audioManagerEngine.pause()
         PodcastPlayerHub.isPlaying.value = false
@@ -508,6 +582,7 @@ class PodcastMediaService : Service() {
     }
 
     private fun stopPlaybackInternal() {
+        unregisterNoisyReceiver()
         stopTickerLoop()
         releaseLocks()
         abandonAudioFocus()
@@ -738,6 +813,9 @@ class PodcastMediaService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "[SYSTEM CONTROL LAYER] Destroying PodcastMediaService")
+        unregisterNoisyReceiver()
+        PodcastPlayerHub.onSetVolume = null
+        PodcastPlayerHub.onSetSpeed = null
         stopTickerLoop()
         releaseLocks()
         abandonAudioFocus()

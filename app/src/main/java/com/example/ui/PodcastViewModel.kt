@@ -427,6 +427,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
         val msg = "Sleep Timer auf $minutes Minuten gesetzt."
         _sponsorSkipEvent.value = msg
+        PodcastMediaService.setVolume(getApplication(), 1.0f)
         if (_isLoggingEnabled.value) {
             viewModelScope.launch {
                 repository.addSyncLog("Sleep Timer", "Countdown gestartet: $minutes min ($totalSec s)")
@@ -441,9 +442,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _sleepTimerRemainingSeconds.value = 0L
                     // Timer expired: stop audio and pause
                     pausePlayback()
+                    PodcastMediaService.setVolume(getApplication(), 1.0f)
                     _sponsorSkipEvent.value = "⏱ Sleep Timer abgelaufen: Wiedergabe pausiert."
                     if (_isLoggingEnabled.value) {
-                        repository.addSyncLog("Sleep Timer", "Countdown beendet -> Audio automatisch pausiert.")
+                        repository.addSyncLog("Sleep Timer", "Countdown beendet -> Audio sanft ausgeblendet und pausiert.")
                     }
                     delay(800L)
                     _sleepTimerRemainingSeconds.value = null
@@ -451,6 +453,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     break
                 } else {
                     _sleepTimerRemainingSeconds.value = current - 1L
+                    // Smooth volume fade-out over the final 30 seconds
+                    if (current <= 30L) {
+                        val fadeRatio = (current.toFloat() / 30f).coerceIn(0.05f, 1.0f)
+                        PodcastMediaService.setVolume(getApplication(), fadeRatio)
+                    }
                 }
             }
         }
@@ -476,6 +483,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun cancelSleepTimer() {
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        PodcastMediaService.setVolume(getApplication(), 1.0f)
         _sleepTimerRemainingSeconds.value = null
         _sleepTimerDurationMinutes.value = null
         _sponsorSkipEvent.value = "Sleep Timer deaktiviert."
@@ -655,8 +663,22 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     // Last refresh timestamp tracking (per podcast ID)
     private val lastRefreshTimestamps = mutableMapOf<String, Long>()
     private val appLaunchTimestamp = System.currentTimeMillis()
+    private var lastPauseTimestamp: Long = 0L
 
     init {
+        PodcastPlayerHub.onHeadsetDisconnected = {
+            _isPlaying.value = false
+            lastPauseTimestamp = System.currentTimeMillis()
+            stopPlaybackJob()
+            _sponsorSkipEvent.value = "Kopfhörer getrennt: Wiedergabe automatisch pausiert."
+            _currentPlayingEpisode.value?.let { current ->
+                viewModelScope.launch {
+                    repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
+                    repository.addSyncLog("Audio Focus", "Headset disconnected -> playback safely paused")
+                }
+            }
+        }
+
         PodcastPlayerHub.onError = { errorMsg ->
             _isPlaying.value = false
             _sponsorSkipEvent.value = "Audio-Fehler: $errorMsg"
@@ -832,7 +854,22 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             var currentEp = episode
             _currentPlayingEpisode.value = currentEp
-            _playbackPositionMs.value = currentEp.playbackPositionMs
+
+            // Smart Context Rewind:
+            // When resuming an episode after a pause of > 10 min or on cold start with significant progress (>15s),
+            // rewind by 8 seconds to give the listener immediate conversational context.
+            val rawPos = currentEp.playbackPositionMs
+            val timeSincePause = if (lastPauseTimestamp > 0L) System.currentTimeMillis() - lastPauseTimestamp else Long.MAX_VALUE
+            val effectiveStartPos = if (rawPos > 15_000L && timeSincePause > 10 * 60 * 1000L) {
+                val rewindPos = (rawPos - 8_000L).coerceAtLeast(0L)
+                _sponsorSkipEvent.value = "Smart-Rewind: -8s für schnellen Wiedereinstieg"
+                repository.addSyncLog("Audio Player", "Smart-Rewind: -8s to restore context (from ${rawPos / 1000}s to ${rewindPos / 1000}s)")
+                rewindPos
+            } else {
+                rawPos
+            }
+
+            _playbackPositionMs.value = effectiveStartPos
             _isAdActive.value = false
             _isPlaying.value = true
 
@@ -862,7 +899,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 context = getApplication(),
                 episode = currentEp,
                 audioTarget = audioTarget,
-                startPositionMs = currentEp.playbackPositionMs
+                startPositionMs = effectiveStartPos
             )
 
             startPlaybackJob()
@@ -1008,6 +1045,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
         if (_isPlaying.value) {
             _isPlaying.value = false
+            lastPauseTimestamp = System.currentTimeMillis()
             PodcastMediaService.pause(getApplication())
             stopPlaybackJob()
             viewModelScope.launch {
@@ -1021,6 +1059,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
         if (_isPlaying.value) {
             _isPlaying.value = false
+            lastPauseTimestamp = System.currentTimeMillis()
             PodcastMediaService.pause(getApplication())
             stopPlaybackJob()
             viewModelScope.launch {
@@ -1028,6 +1067,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 repository.addSyncLog("Pixel 9 Pro (This Device)", "Paused '${current.title}'")
             }
         } else {
+            val rawPos = _playbackPositionMs.value
+            val timeSincePause = if (lastPauseTimestamp > 0L) System.currentTimeMillis() - lastPauseTimestamp else Long.MAX_VALUE
+            val effectiveStartPos = if (rawPos > 15_000L && timeSincePause > 10 * 60 * 1000L) {
+                val rewindPos = (rawPos - 8_000L).coerceAtLeast(0L)
+                _sponsorSkipEvent.value = "Smart-Rewind: -8s für schnellen Wiedereinstieg"
+                rewindPos
+            } else {
+                rawPos
+            }
+            _playbackPositionMs.value = effectiveStartPos
             _isPlaying.value = true
             val audioTarget = if (EpisodeDownloader.isValidDownloadedFile(current.downloadLocalPath)) {
                 current.downloadLocalPath!!
@@ -1038,7 +1087,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 context = getApplication(),
                 episode = current,
                 audioTarget = audioTarget,
-                startPositionMs = _playbackPositionMs.value
+                startPositionMs = effectiveStartPos
             )
             startPlaybackJob()
             viewModelScope.launch {
@@ -1558,6 +1607,13 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _playbackPositionMs.value = newPosition
                     checkSponsorAndAdDetection(newPosition)
 
+                    // Frequent Room checkpointing: persist position every 5s (20 ticks * 250ms)
+                    if (loopTickCount % 20 == 0) {
+                        viewModelScope.launch {
+                            repository.updateEpisodeProgress(current.id, newPosition, false)
+                        }
+                    }
+
                     // Emit live telemetry to system console / logcat every 3 seconds (12 * 250ms)
                     if (++loopTickCount % 12 == 0) {
                         val posSec = newPosition / 1000
@@ -1582,6 +1638,18 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.updateEpisodeProgress(current.id, durationMs, true)
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Completed listening to '${current.title}'")
+
+            // Smart Playback: Auto-Play Next Episode
+            val allEpisodes = episodes.value
+            val sameShowEpisodes = allEpisodes.filter { it.podcastId == current.podcastId && it.id != current.id && !it.isCompleted }
+            val nextEpisode = sameShowEpisodes.firstOrNull() ?: allEpisodes.firstOrNull { it.id != current.id && !it.isCompleted }
+
+            if (nextEpisode != null) {
+                _sponsorSkipEvent.value = "Folge beendet. Spiele nächste Folge: ${nextEpisode.title}"
+                repository.addSyncLog("Audio Player", "Auto-Playing next episode: '${nextEpisode.title}'")
+                delay(1500L)
+                playEpisode(nextEpisode, openPlayer = false)
+            }
         }
     }
 

@@ -172,32 +172,49 @@ object PodcastApiClient {
         }
     }
 
-    private val feedCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, String>>()
+    data class FeedCacheEntry(
+        val timestamp: Long,
+        val xml: String,
+        val etag: String? = null,
+        val lastModified: String? = null
+    )
+
+    private val feedCache = java.util.concurrent.ConcurrentHashMap<String, FeedCacheEntry>()
 
     suspend fun getOrFetchFeedXml(feedUrl: String, enableRetry: Boolean = false): String? {
         if (feedUrl.isBlank() || !feedUrl.startsWith("http")) return null
         val now = System.currentTimeMillis()
         val cached = feedCache[feedUrl]
-        if (cached != null && (now - cached.first) < 5 * 60 * 1000L) {
-            return cached.second
+        if (cached != null && (now - cached.timestamp) < 5 * 60 * 1000L) {
+            return cached.xml
         }
 
         if (!enableRetry) {
             return try {
-                val request = Request.Builder()
+                val requestBuilder = Request.Builder()
                     .url(feedUrl)
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
-                    .build()
-                val response = client.newCall(request).execute()
+
+                cached?.etag?.let { requestBuilder.header("If-None-Match", it) }
+                cached?.lastModified?.let { requestBuilder.header("If-Modified-Since", it) }
+
+                val response = client.newCall(requestBuilder.build()).execute()
+                if (response.code == 304 && cached != null) {
+                    feedCache[feedUrl] = cached.copy(timestamp = now)
+                    return cached.xml
+                }
+
                 if (response.isSuccessful) {
+                    val newEtag = response.header("ETag")
+                    val newLastMod = response.header("Last-Modified")
                     val xml = response.body?.string()
                     if (!xml.isNullOrEmpty()) {
-                        feedCache[feedUrl] = Pair(now, xml)
+                        feedCache[feedUrl] = FeedCacheEntry(now, xml, newEtag, newLastMod)
                         xml
                     } else null
                 } else null
             } catch (e: Exception) {
-                null
+                cached?.xml
             }
         }
 
@@ -205,11 +222,19 @@ object PodcastApiClient {
             NetworkRetryPolicy.executeWithConnectionRetry(
                 operationName = "RSS-Feed ($feedUrl)"
             ) {
-                val request = Request.Builder()
+                val requestBuilder = Request.Builder()
                     .url(feedUrl)
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 LabCast/1.0")
-                    .build()
-                val response = client.newCall(request).execute()
+
+                cached?.etag?.let { requestBuilder.header("If-None-Match", it) }
+                cached?.lastModified?.let { requestBuilder.header("If-Modified-Since", it) }
+
+                val response = client.newCall(requestBuilder.build()).execute()
+                if (response.code == 304 && cached != null) {
+                    feedCache[feedUrl] = cached.copy(timestamp = System.currentTimeMillis())
+                    return@executeWithConnectionRetry cached.xml
+                }
+
                 if (!response.isSuccessful) {
                     throw java.io.IOException("HTTP ${response.code}: ${response.message}")
                 }
@@ -217,11 +242,13 @@ object PodcastApiClient {
                 if (xml.isNullOrEmpty()) {
                     throw java.io.IOException("Leere Antwort vom Podcast Feed")
                 }
-                feedCache[feedUrl] = Pair(System.currentTimeMillis(), xml)
+                val newEtag = response.header("ETag")
+                val newLastMod = response.header("Last-Modified")
+                feedCache[feedUrl] = FeedCacheEntry(System.currentTimeMillis(), xml, newEtag, newLastMod)
                 xml
             }
         } catch (e: Exception) {
-            null
+            cached?.xml
         }
     }
 

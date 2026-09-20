@@ -32,9 +32,35 @@ class PodcastAudioManager(private val context: Context) {
     private var isPlaybackRequested = false
     private var currentUrlOrPath: String? = null
     private var requestedStartPositionMs: Long = 0L
+    private var currentVolume: Float = 1.0f
 
     var onCompletionListener: (() -> Unit)? = null
     var onErrorListener: ((String) -> Unit)? = null
+
+    @Synchronized
+    fun setVolume(volume: Float) {
+        currentVolume = volume.coerceIn(0.0f, 1.0f)
+        try {
+            mediaPlayer?.setVolume(currentVolume, currentVolume)
+        } catch (_: Exception) {}
+    }
+
+    @Synchronized
+    fun setPlaybackSpeed(speed: Float) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                mediaPlayer?.let { mp ->
+                    if (_isPrepared.value) {
+                        val params = mp.playbackParams
+                        params.speed = speed.coerceIn(0.5f, 3.0f)
+                        mp.playbackParams = params
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("PodcastAudioManager", "Could not set playback speed: ${e.message}")
+        }
+    }
 
     @Synchronized
     fun play(urlOrPath: String, startPositionMs: Long = 0) {
@@ -104,6 +130,9 @@ class PodcastAudioManager(private val context: Context) {
                 setOnPreparedListener { mp ->
                     _isPrepared.value = true
                     _isBuffering.value = false
+                    try {
+                        mp.setVolume(currentVolume, currentVolume)
+                    } catch (_: Exception) {}
                     Log.i("PodcastAudioManager", "Local file prepared successfully (${file.length()} bytes). Duration: ${mp.duration}ms")
                     if (isPlaybackRequested) {
                         if (startPositionMs > 0 && startPositionMs < mp.duration) {
@@ -150,6 +179,9 @@ class PodcastAudioManager(private val context: Context) {
                 setOnPreparedListener { mp ->
                     _isPrepared.value = true
                     _isBuffering.value = false
+                    try {
+                        mp.setVolume(currentVolume, currentVolume)
+                    } catch (_: Exception) {}
                     Log.i("PodcastAudioManager", "Stream prepared successfully. Duration: ${mp.duration}ms")
                     if (isPlaybackRequested) {
                         if (startPositionMs > 0 && startPositionMs < mp.duration) {

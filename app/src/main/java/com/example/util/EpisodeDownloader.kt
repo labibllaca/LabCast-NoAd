@@ -44,36 +44,58 @@ object EpisodeDownloader {
                 operationName = "Download ($cleanId)",
                 maxMinuteCycles = 3
             ) {
-                val tempFile = File(dir, "${cleanId}_tmp_${System.currentTimeMillis()}.mp3")
+                val partialFile = File(dir, "${cleanId}.part")
                 try {
-                    Log.i("EpisodeDownloader", "Starting real offline download from: $url")
-                    val request = Request.Builder()
+                    val existingBytes = if (partialFile.exists()) partialFile.length() else 0L
+                    Log.i("EpisodeDownloader", "Starting real offline download from: $url (existingBytes=$existingBytes)")
+
+                    val requestBuilder = Request.Builder()
                         .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) LabCast/1.0")
                         .header("Accept", "*/*")
                         .header("Accept-Encoding", "identity")
-                        .build()
 
-                    val response = client.newCall(request).execute()
+                    if (existingBytes > 0L) {
+                        requestBuilder.header("Range", "bytes=$existingBytes-")
+                        Log.i("EpisodeDownloader", "Requesting HTTP Range: bytes=$existingBytes-")
+                    }
+
+                    var response = client.newCall(requestBuilder.build()).execute()
+
+                    // If HTTP 416 (Range Not Satisfiable), delete partial file and retry fresh
+                    if (response.code == 416) {
+                        response.close()
+                        partialFile.delete()
+                        val freshRequest = Request.Builder()
+                            .url(url)
+                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) LabCast/1.0")
+                            .header("Accept", "*/*")
+                            .header("Accept-Encoding", "identity")
+                            .build()
+                        response = client.newCall(freshRequest).execute()
+                    }
+
                     if (!response.isSuccessful) {
                         throw java.io.IOException("Download failed with HTTP ${response.code}: ${response.message}")
                     }
 
+                    val isAppend = response.code == 206 && existingBytes > 0L
                     val body = response.body ?: throw java.io.IOException("Response body is null")
 
                     val contentLength = body.contentLength()
+                    val totalExpected = if (isAppend && contentLength > 0) existingBytes + contentLength else contentLength
                     val inputStream = body.byteStream()
-                    val outputStream = FileOutputStream(tempFile)
+                    val outputStream = FileOutputStream(partialFile, isAppend)
 
                     val buffer = ByteArray(16384)
                     var bytesRead: Int
-                    var totalBytes: Long = 0
+                    var totalBytes: Long = if (isAppend) existingBytes else 0L
 
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
                         totalBytes += bytesRead
-                        if (contentLength > 0) {
-                            onProgress((totalBytes.toFloat() / contentLength).coerceIn(0f, 1f))
+                        if (totalExpected > 0) {
+                            onProgress((totalBytes.toFloat() / totalExpected).coerceIn(0f, 1f))
                         }
                     }
 
@@ -82,8 +104,8 @@ object EpisodeDownloader {
                     inputStream.close()
 
                     // Verify that we downloaded a valid non-empty audio file (at least 15KB)
-                    if (totalBytes < 15000L || !tempFile.exists() || tempFile.length() < 15000L) {
-                        if (tempFile.exists()) tempFile.delete()
+                    if (totalBytes < 15000L || !partialFile.exists() || partialFile.length() < 15000L) {
+                        if (partialFile.exists()) partialFile.delete()
                         throw java.io.IOException("Downloaded file too small ($totalBytes bytes)")
                     }
 
@@ -91,19 +113,16 @@ object EpisodeDownloader {
                     if (destinationFile.exists()) {
                         destinationFile.delete()
                     }
-                    val renamed = tempFile.renameTo(destinationFile)
+                    val renamed = partialFile.renameTo(destinationFile)
                     if (renamed && destinationFile.exists()) {
-                        Log.i("EpisodeDownloader", "Successfully downloaded episode (${destinationFile.length()} bytes) to: ${destinationFile.absolutePath}")
+                        Log.i("EpisodeDownloader", "Successfully completed resumable download (${destinationFile.length()} bytes) to: ${destinationFile.absolutePath}")
                         onProgress(1.0f)
                         destinationFile.absolutePath
                     } else {
-                        if (tempFile.exists()) tempFile.delete()
-                        throw java.io.IOException("Failed to rename temp file to destination")
+                        if (partialFile.exists()) partialFile.delete()
+                        throw java.io.IOException("Failed to rename partial file to destination")
                     }
                 } catch (e: Exception) {
-                    if (tempFile.exists()) {
-                        try { tempFile.delete() } catch (_: Exception) {}
-                    }
                     throw e
                 }
             }
