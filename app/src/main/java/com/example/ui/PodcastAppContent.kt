@@ -1,5 +1,12 @@
 package com.example.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import com.example.R
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -18,6 +25,8 @@ import com.example.data.getEffectiveTimestamp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -211,9 +220,40 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     val sponsorSkipEvent by viewModel.sponsorSkipEvent.collectAsStateWithLifecycle()
     val networkRetryStatus by viewModel.networkRetryStatus.collectAsStateWithLifecycle()
     val isNetworkOnline by viewModel.isNetworkOnline.collectAsStateWithLifecycle()
+    val isAlbanianLanguage by viewModel.isAlbanianLanguage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var lastBackPressTime by remember { mutableLongStateOf(0L) }
+    val backExitIntervalMs = 2000L
+
+    // Unified system back button handler
+    BackHandler(enabled = true) {
+        val handled = viewModel.handleSystemBackPress()
+        if (!handled) {
+            val now = System.currentTimeMillis()
+            if (now - lastBackPressTime < backExitIntervalMs) {
+                // Double press in short interval: close app
+                var currentCtx: Context? = context
+                while (currentCtx is ContextWrapper) {
+                    if (currentCtx is Activity) {
+                        currentCtx.finish()
+                        break
+                    }
+                    currentCtx = currentCtx.baseContext
+                }
+            } else {
+                // First press on dashboard: notify to press again to close
+                lastBackPressTime = now
+                Toast.makeText(
+                    context,
+                    AppLanguage.exitToast(isAlbanianLanguage),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
 
     LaunchedEffect(sponsorSkipEvent) {
         sponsorSkipEvent?.let { message ->
@@ -230,8 +270,13 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Column {
-                // Persistent Floating/Sliding Mini Player
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(bottom = 6.dp)
+            ) {
+                // Persistent Floating Pill Mini Player
                 currentPlayingEpisode?.let { episode ->
                     AnimatedVisibility(
                         visible = !isPlayerExpanded,
@@ -247,69 +292,15 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                     }
                 }
 
-                // Main Navigation Tabs
-                NavigationBar(
-                    containerColor = colors.cardBackground,
-                    tonalElevation = 8.dp,
-                    modifier = Modifier.border(1.dp, colors.itemBorder, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                ) {
-                    NavigationBarItem(
-                        selected = activeTab == PodcastViewModel.Tab.DISCOVER,
-                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.DISCOVER) },
-                        icon = { Icon(Icons.Default.Explore, contentDescription = "Discover") },
-                        label = { Text("Discover") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
-                            selectedTextColor = CyberGreen,
-                            indicatorColor = CyberGreen,
-                            unselectedIconColor = colors.textMuted,
-                            unselectedTextColor = colors.textMuted
-                        ),
-                        modifier = Modifier.testTag("nav_tab_discover")
-                    )
-                    NavigationBarItem(
-                        selected = activeTab == PodcastViewModel.Tab.DOWNLOADS,
-                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.DOWNLOADS) },
-                        icon = { Icon(Icons.Default.OfflinePin, contentDescription = "Offline") },
-                        label = { Text("Offline") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
-                            selectedTextColor = CyberGreen,
-                            indicatorColor = CyberGreen,
-                            unselectedIconColor = colors.textMuted,
-                            unselectedTextColor = colors.textMuted
-                        ),
-                        modifier = Modifier.testTag("nav_tab_offline")
-                    )
-                    NavigationBarItem(
-                        selected = activeTab == PodcastViewModel.Tab.VERLAUF,
-                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.VERLAUF) },
-                        icon = { Icon(Icons.Default.History, contentDescription = "Verlauf") },
-                        label = { Text("Verlauf") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
-                            selectedTextColor = CyberGreen,
-                            indicatorColor = CyberGreen,
-                            unselectedIconColor = colors.textMuted,
-                            unselectedTextColor = colors.textMuted
-                        ),
-                        modifier = Modifier.testTag("nav_tab_verlauf")
-                    )
-                    NavigationBarItem(
-                        selected = activeTab == PodcastViewModel.Tab.SETTINGS,
-                        onClick = { viewModel.selectTab(PodcastViewModel.Tab.SETTINGS) },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                        label = { Text("Settings") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = if (colors.isDark) ObsidianBlack else Color.White,
-                            selectedTextColor = CyberGreen,
-                            indicatorColor = CyberGreen,
-                            unselectedIconColor = colors.textMuted,
-                            unselectedTextColor = colors.textMuted
-                        ),
-                        modifier = Modifier.testTag("nav_tab_settings")
-                    )
-                }
+                // Floating Pill Navigation Bar
+                FloatingPillNavigationBar(
+                    activeTab = activeTab,
+                    isAlbanian = isAlbanianLanguage,
+                    onTabSelected = { tab -> viewModel.selectTab(tab) },
+                    onSearchClick = {
+                        viewModel.selectTab(PodcastViewModel.Tab.DISCOVER)
+                    }
+                )
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -695,20 +686,19 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Source Selection Filter Chips
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "Source:",
+                            text = "Search Source",
                             color = colors.textMuted,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(end = 6.dp)
+                            modifier = Modifier.padding(bottom = 6.dp)
                         )
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             items(PodcastSource.values()) { source ->
                                 val isSelected = selectedSearchSource == source
@@ -743,10 +733,8 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
             // Search Results Section (Rendered when query is present)
             if (searchQuery.isNotBlank() || searchResults.isNotEmpty()) {
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = "Search Results (${searchResults.size})",
@@ -754,6 +742,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold
                         )
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "Source: ${selectedSearchSource.displayName}",
                             color = CyberGreen,
@@ -1823,8 +1812,27 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
                 }
             }
         } else {
-            items(downloadedEpisodes) { episode ->
-                EpisodeListItem(
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = null,
+                        tint = CyberGreen,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Nach links wischen: Als Nächstes in Playlist oder Download löschen",
+                        color = TextGray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            items(downloadedEpisodes, key = { it.id }) { episode ->
+                SwipeableOfflineEpisodeItem(
                     episode = episode,
                     viewModel = viewModel,
                     onPlayClick = { viewModel.playEpisode(episode) }
@@ -1834,6 +1842,155 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
 
         item {
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Swipeable Offline Episode Item:
+ * Swiping to the left reveals two action buttons:
+ * 1. "Als Nächstes": Adds the episode to the top of the Up-Next playlist queue.
+ * 2. "Löschen": Removes the downloaded offline copy from sandbox storage.
+ */
+@Composable
+fun SwipeableOfflineEpisodeItem(
+    episode: EpisodeEntity,
+    viewModel: PodcastViewModel,
+    onPlayClick: () -> Unit
+) {
+    val colors = LocalCustomColors.current
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    val animatedOffsetX by animateFloatAsState(
+        targetValue = offsetX,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioLowBouncy),
+        label = "swipe_offset"
+    )
+
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val maxSwipePx = with(density) { 164.dp.toPx() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .draggable(
+                state = rememberDraggableState { delta ->
+                    val newOffset = offsetX + delta
+                    offsetX = newOffset.coerceIn(-maxSwipePx, 0f)
+                },
+                orientation = Orientation.Horizontal,
+                onDragStopped = { velocity ->
+                    offsetX = if (velocity < -400f || offsetX < -maxSwipePx / 3f) {
+                        -maxSwipePx
+                    } else {
+                        0f
+                    }
+                }
+            )
+    ) {
+        // Background Actions (revealed when swiped to the left)
+        Row(
+            modifier = Modifier
+                .matchParentSize()
+                .padding(vertical = 2.dp)
+                .background(
+                    if (colors.isDark) Color(0xFF131720) else Color(0xFFE2E8F0),
+                    RoundedCornerShape(14.dp)
+                )
+                .padding(end = 10.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Action 1: Add as Next in Playlist
+            Card(
+                onClick = {
+                    offsetX = 0f
+                    viewModel.addEpisodeToQueueNext(episode)
+                },
+                colors = CardDefaults.cardColors(containerColor = CyberGreen.copy(alpha = 0.18f)),
+                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .width(70.dp)
+                    .fillMaxHeight(0.88f)
+                    .testTag("action_queue_next_${episode.id}")
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Als Nächstes abspielen",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Als Nächstes",
+                        color = CyberGreen,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Action 2: Remove from Download
+            Card(
+                onClick = {
+                    offsetX = 0f
+                    viewModel.deleteDownload(episode)
+                },
+                colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.18f)),
+                border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .width(66.dp)
+                    .fillMaxHeight(0.88f)
+                    .testTag("action_delete_download_${episode.id}")
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.DeleteOutline,
+                        contentDescription = "Download löschen",
+                        tint = ErrorRed,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Löschen",
+                        color = ErrorRed,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Foreground Episode Item (Draggable to the left)
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(animatedOffsetX.roundToInt(), 0) }
+                .fillMaxWidth()
+        ) {
+            EpisodeListItem(
+                episode = episode,
+                viewModel = viewModel,
+                onPlayClick = {
+                    if (offsetX != 0f) {
+                        offsetX = 0f
+                    } else {
+                        onPlayClick()
+                    }
+                }
+            )
         }
     }
 }
@@ -2660,7 +2817,7 @@ fun SearchResultCard(
 }
 
 // ==========================================
-// 4. FLOATING MINI PLAYER
+// 4. FLOATING MINI PLAYER & PILL FOOT BAR
 // ==========================================
 @Composable
 fun MiniPlayerSection(
@@ -2676,7 +2833,7 @@ fun MiniPlayerSection(
     val isAdActive by viewModel.isAdActive.collectAsStateWithLifecycle()
 
     val durationMs = episode.durationSeconds * 1000f
-    val progressFraction = if (durationMs > 0) playbackPositionMs / durationMs else 0f
+    val progressFraction = if (durationMs > 0) (playbackPositionMs / durationMs).coerceIn(0f, 1f) else 0f
 
     val coroutineScope = rememberCoroutineScope()
     val offsetY = remember { Animatable(0f) }
@@ -2698,6 +2855,7 @@ fun MiniPlayerSection(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp)
             .offset { IntOffset(0, offsetY.value.roundToInt().coerceAtLeast(0)) }
             .alpha(if (isDismissing) 0f else (1f - (offsetY.value / (dismissThresholdPx * 2.5f))).coerceIn(0.15f, 1f))
             .draggable(
@@ -2728,44 +2886,30 @@ fun MiniPlayerSection(
             )
             .testTag("mini_player_container")
     ) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = colors.miniPlayerBg),
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-                .border(1.dp, if (isAdActive) AdGold else colors.itemBorder, RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(26.dp))
                 .clickable { onExpand() }
                 .testTag("mini_player"),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(26.dp),
+            color = colors.miniPlayerBg.copy(alpha = if (colors.isDark) 0.95f else 0.98f),
+            border = BorderStroke(1.dp, if (isAdActive) AdGold else colors.itemBorder.copy(alpha = 0.7f)),
+            shadowElevation = 8.dp,
+            tonalElevation = 3.dp
         ) {
-            Column {
-                // Swipe down cue handle at top of mini player
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(32.dp)
-                            .height(3.dp)
-                            .clip(CircleShape)
-                            .background(colors.itemBorder.copy(alpha = 0.8f))
-                    )
-                }
-
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 8.dp, end = 6.dp, top = 2.dp, bottom = 6.dp),
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Artwork
+                    // Artwork (Rounded square like in image)
                     Box(
                         modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(6.dp))
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(colors.itemBorder)
                     ) {
                         SmartPodcastImage(
@@ -2789,9 +2933,9 @@ fun MiniPlayerSection(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    "BUFFERING STREAM...",
+                                    "BUFFERING...",
                                     color = primaryAccent,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 )
@@ -2805,9 +2949,9 @@ fun MiniPlayerSection(
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
-                                    "SPONSOR SEGMENT DETECTED",
+                                    "SPONSOR DETECTED",
                                     color = AdGold,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 )
@@ -2824,7 +2968,7 @@ fun MiniPlayerSection(
                         Text(
                             text = episode.podcastTitle,
                             color = colors.textMuted,
-                            fontSize = 10.sp,
+                            fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -2833,7 +2977,7 @@ fun MiniPlayerSection(
                     // Controls inside mini player
                     if (isBuffering) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp).padding(2.dp),
+                            modifier = Modifier.size(26.dp).padding(2.dp),
                             color = primaryAccent,
                             strokeWidth = 2.dp
                         )
@@ -2841,24 +2985,37 @@ fun MiniPlayerSection(
                         Button(
                             onClick = { viewModel.skipAdManually() },
                             colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                             modifier = Modifier.height(28.dp).testTag("mini_skip_ad_button")
                         ) {
                             Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(12.dp))
                             Spacer(modifier = Modifier.width(2.dp))
-                            Text("Skip Ad", fontSize = 9.sp, fontWeight = FontWeight.Black)
+                            Text("Skip", fontSize = 9.sp, fontWeight = FontWeight.Black)
                         }
                     } else {
                         IconButton(
                             onClick = { viewModel.togglePlayPause() },
-                            modifier = Modifier.size(36.dp).testTag("mini_play_pause")
+                            modifier = Modifier.size(34.dp).testTag("mini_play_pause")
                         ) {
                             Icon(
                                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (isPlaying) "Pause" else "Play",
                                 tint = primaryAccent,
                                 modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        // Fast Forward / Skip 15s (matches double arrow in screenshot)
+                        IconButton(
+                            onClick = { viewModel.skipForward() },
+                            modifier = Modifier.size(34.dp).testTag("mini_fast_forward")
+                        ) {
+                            Icon(
+                                Icons.Default.FastForward,
+                                contentDescription = "Fast Forward 15s",
+                                tint = colors.textPrimary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -2872,28 +3029,172 @@ fun MiniPlayerSection(
                                 onDismiss()
                             }
                         },
-                        modifier = Modifier.size(32.dp).testTag("mini_close_player")
+                        modifier = Modifier.size(28.dp).testTag("mini_close_player")
                     ) {
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Close and Stop Player",
-                            tint = colors.textMuted,
-                            modifier = Modifier.size(18.dp)
+                            tint = colors.textMuted.copy(alpha = 0.7f),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
 
                 // Bottom edge slim progress bar
                 LinearProgressIndicator(
-                    progress = { progressFraction.coerceIn(0f, 1f) },
+                    progress = { progressFraction },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp),
+                        .height(2.5.dp),
                     color = if (isAdActive) AdGold else primaryAccent,
-                    trackColor = colors.itemBorder
+                    trackColor = colors.itemBorder.copy(alpha = 0.3f)
                 )
             }
         }
+    }
+}
+
+@Composable
+fun FloatingPillNavigationBar(
+    activeTab: PodcastViewModel.Tab,
+    isAlbanian: Boolean = false,
+    onTabSelected: (PodcastViewModel.Tab) -> Unit,
+    onSearchClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalCustomColors.current
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Main Pill Navigation Dock
+        Surface(
+            modifier = Modifier
+                .weight(1f)
+                .height(60.dp)
+                .testTag("floating_nav_dock"),
+            shape = RoundedCornerShape(30.dp),
+            color = colors.cardBackground.copy(alpha = if (colors.isDark) 0.94f else 0.98f),
+            border = BorderStroke(1.dp, colors.itemBorder.copy(alpha = 0.7f)),
+            shadowElevation = 8.dp,
+            tonalElevation = 2.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Tab 1: Discover / Home
+                PillNavItem(
+                    icon = if (activeTab == PodcastViewModel.Tab.DISCOVER) Icons.Filled.Home else Icons.Default.Home,
+                    label = AppLanguage.getTabLabel(isAlbanian, PodcastViewModel.Tab.DISCOVER),
+                    selected = activeTab == PodcastViewModel.Tab.DISCOVER,
+                    testTag = "nav_tab_discover",
+                    onClick = { onTabSelected(PodcastViewModel.Tab.DISCOVER) }
+                )
+
+                // Tab 2: Offline
+                PillNavItem(
+                    icon = if (activeTab == PodcastViewModel.Tab.DOWNLOADS) Icons.Filled.OfflinePin else Icons.Default.OfflinePin,
+                    label = AppLanguage.getTabLabel(isAlbanian, PodcastViewModel.Tab.DOWNLOADS),
+                    selected = activeTab == PodcastViewModel.Tab.DOWNLOADS,
+                    testTag = "nav_tab_offline",
+                    onClick = { onTabSelected(PodcastViewModel.Tab.DOWNLOADS) }
+                )
+
+                // Tab 3: Verlauf / Library
+                PillNavItem(
+                    icon = if (activeTab == PodcastViewModel.Tab.VERLAUF) Icons.Filled.LibraryMusic else Icons.Default.LibraryMusic,
+                    label = AppLanguage.getTabLabel(isAlbanian, PodcastViewModel.Tab.VERLAUF),
+                    selected = activeTab == PodcastViewModel.Tab.VERLAUF,
+                    testTag = "nav_tab_verlauf",
+                    onClick = { onTabSelected(PodcastViewModel.Tab.VERLAUF) }
+                )
+
+                // Tab 4: Settings
+                PillNavItem(
+                    icon = if (activeTab == PodcastViewModel.Tab.SETTINGS) Icons.Filled.Settings else Icons.Default.Settings,
+                    label = AppLanguage.getTabLabel(isAlbanian, PodcastViewModel.Tab.SETTINGS),
+                    selected = activeTab == PodcastViewModel.Tab.SETTINGS,
+                    testTag = "nav_tab_settings",
+                    onClick = { onTabSelected(PodcastViewModel.Tab.SETTINGS) }
+                )
+            }
+        }
+
+        // Circular Search Pill Button on the Right
+        Surface(
+            modifier = Modifier
+                .size(60.dp)
+                .testTag("floating_search_pill"),
+            shape = CircleShape,
+            color = colors.cardBackground.copy(alpha = if (colors.isDark) 0.94f else 0.98f),
+            border = BorderStroke(1.dp, colors.itemBorder.copy(alpha = 0.7f)),
+            shadowElevation = 8.dp,
+            tonalElevation = 2.dp
+        ) {
+            IconButton(
+                onClick = onSearchClick,
+                modifier = Modifier.fillMaxSize().testTag("btn_floating_search")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = AppLanguage.searchTitle(isAlbanian),
+                    tint = if (colors.isDark) CyberGreen else LightPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PillNavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    val colors = LocalCustomColors.current
+    val accentColor = if (colors.isDark) CyberGreen else LightPrimary
+
+    val scale by animateFloatAsState(
+        targetValue = if (selected) 1.08f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "pill_item_scale"
+    )
+
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .scale(scale)
+            .testTag(testTag),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = if (selected) accentColor else colors.textMuted,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            color = if (selected) accentColor else colors.textMuted,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1
+        )
     }
 }
 
@@ -3374,9 +3675,9 @@ fun FullPlayerScreen(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(24.dp)
-                                    .background(if (colors.isDark) ObsidianBlack.copy(alpha = 0.6f) else LightCard, RoundedCornerShape(6.dp))
-                                    .border(0.5.dp, colors.itemBorder, RoundedCornerShape(6.dp))
+                                    .height(26.dp)
+                                    .background(if (colors.isDark) ObsidianBlack.copy(alpha = 0.6f) else LightCard, RoundedCornerShape(8.dp))
+                                    .border(1.5.dp, if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8), RoundedCornerShape(8.dp))
                                     .padding(horizontal = 4.dp, vertical = 2.dp),
                                 contentAlignment = Alignment.CenterStart
                             ) {
@@ -3395,7 +3696,7 @@ fun FullPlayerScreen(
                                         val isPast = index <= currentBarIndex
 
                                         val barColor = when {
-                                            isAcousticAd -> if (isPast) AdGold else AdGold.copy(alpha = 0.5f)
+                                            isAcousticAd -> if (isPast) AdGold else AdGold.copy(alpha = 0.6f)
                                             isPast -> primaryAccent
                                             else -> colors.textMuted.copy(alpha = 0.35f)
                                         }
@@ -3404,8 +3705,13 @@ fun FullPlayerScreen(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .padding(horizontal = 0.5.dp)
-                                                .fillMaxHeight(amp.coerceIn(0.15f, 1.0f))
+                                                .fillMaxHeight(amp.coerceIn(0.18f, 1.0f))
                                                 .background(barColor, RoundedCornerShape(1.dp))
+                                                .border(
+                                                    width = if (isAcousticAd) 0.8.dp else 0.dp,
+                                                    color = if (isAcousticAd) AdGold else Color.Transparent,
+                                                    shape = RoundedCornerShape(1.dp)
+                                                )
                                         )
                                     }
                                 }
@@ -3419,7 +3725,7 @@ fun FullPlayerScreen(
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = AdGold.copy(alpha = 0.2f),
-                            border = BorderStroke(1.dp, AdGold)
+                            border = BorderStroke(1.5.dp, AdGold)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -3458,8 +3764,52 @@ fun FullPlayerScreen(
                 }
             }
 
-            // Slider & Timers
+            // Slider & Timers with Chapter Segments Track
             Column(modifier = Modifier.fillMaxWidth()) {
+                // Segmented Chapter / Ad Marker Track with Clearly Visible Borders
+                if (chapters.isNotEmpty() && durationMs > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp))
+                            .border(1.5.dp, if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8), RoundedCornerShape(3.dp)),
+                        horizontalArrangement = Arrangement.spacedBy(1.5.dp)
+                    ) {
+                        chapters.forEach { chapter ->
+                            val chapDur = (chapter.durationSeconds ?: 60L).coerceAtLeast(1L).toFloat()
+                            val epDur = episode!!.durationSeconds.coerceAtLeast(1L)
+                            val weight = (chapDur / epDur).coerceAtLeast(0.01f)
+                            val isChapterPassed = (playbackPositionMs / 1000) >= (chapter.startTimeSeconds + chapDur.toLong())
+                            val isChapterCurrent = (playbackPositionMs / 1000) >= chapter.startTimeSeconds && !isChapterPassed
+                            val isSponsorChap = chapter.isSponsorChapter()
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(weight)
+                                    .fillMaxHeight()
+                                    .background(
+                                        when {
+                                            isSponsorChap -> AdGold
+                                            isChapterCurrent -> primaryAccent
+                                            isChapterPassed -> primaryAccent.copy(alpha = 0.5f)
+                                            else -> colors.itemBorder.copy(alpha = 0.4f)
+                                        }
+                                    )
+                                    .border(
+                                        1.dp,
+                                        when {
+                                            isSponsorChap -> AdGold
+                                            isChapterCurrent -> primaryAccentGlow
+                                            else -> if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8)
+                                        }
+                                    )
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                }
+
                 Slider(
                     value = sliderValue,
                     onValueChange = { viewModel.seekTo(it.toLong()) },
@@ -3515,12 +3865,20 @@ fun FullPlayerScreen(
                                     modifier = Modifier.size(13.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Timer: $countdownStr verbleibend",
-                                    color = colors.textPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Column {
+                                    Text(
+                                        text = "Sleep-Timer",
+                                        color = primaryAccent,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "$countdownStr verbleibend",
+                                        color = colors.textPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -4102,17 +4460,16 @@ fun TranscriptBottomSheet(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Matched ad keywords badges
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
+                        Column(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "Ad Keywords Found:",
+                                text = "Ad Keywords Found",
                                 color = colors.textMuted,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
 
                             if (sttMatchedKeywords.isEmpty()) {
                                 Text(
@@ -4407,12 +4764,12 @@ fun TranscriptBottomSheet(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .border(
-                                        width = if (isCurrentLine || segment.isSponsor || suggestion != null) 1.5.dp else 1.dp,
+                                        width = if (isCurrentLine || segment.isSponsor || suggestion != null) 2.dp else 1.5.dp,
                                         color = when {
+                                            isCurrentLine -> primaryAccent
                                             segment.isSponsor -> AdGold
                                             suggestion != null -> Color(0xFFFFB74D)
-                                            isCurrentLine -> primaryAccent
-                                            else -> colors.itemBorder
+                                            else -> if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8)
                                         },
                                         shape = RoundedCornerShape(12.dp)
                                     )
@@ -4428,7 +4785,7 @@ fun TranscriptBottomSheet(
                                             Surface(
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = if (segment.isSponsor) AdGold.copy(alpha = 0.2f) else primaryAccent.copy(alpha = 0.2f),
-                                                border = BorderStroke(1.dp, if (segment.isSponsor) AdGold else primaryAccent)
+                                                border = BorderStroke(1.5.dp, if (segment.isSponsor) AdGold else primaryAccent)
                                             ) {
                                                 Text(
                                                     text = segment.formattedTime(),
@@ -4720,8 +5077,8 @@ fun ChaptersBottomSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(
-                                    width = if (isActive) 1.5.dp else 1.dp,
-                                    color = if (isActive) primaryAccent else colors.itemBorder,
+                                    width = if (isActive) 2.dp else 1.5.dp,
+                                    color = if (isActive) primaryAccent else (if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8)),
                                     shape = RoundedCornerShape(12.dp)
                                 )
                                 .testTag("chapter_item_${chapter.id}")
@@ -4738,7 +5095,7 @@ fun ChaptersBottomSheet(
                                         .size(36.dp)
                                         .clip(CircleShape)
                                         .background(if (isActive) primaryAccent else (if (colors.isDark) DarkCharcoal else LightCard))
-                                        .border(1.dp, if (isActive) primaryAccentGlow else colors.itemBorder, CircleShape),
+                                        .border(1.5.dp, if (isActive) primaryAccentGlow else (if (colors.isDark) Color(0xFF4B5563) else Color(0xFF94A3B8)), CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isActive) {

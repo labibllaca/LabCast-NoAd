@@ -33,6 +33,7 @@ class PodcastAudioManager(private val context: Context) {
     private var currentUrlOrPath: String? = null
     private var requestedStartPositionMs: Long = 0L
     private var currentVolume: Float = 1.0f
+    private var currentSpeed: Float = 1.0f
 
     var onCompletionListener: (() -> Unit)? = null
     var onErrorListener: ((String) -> Unit)? = null
@@ -47,12 +48,15 @@ class PodcastAudioManager(private val context: Context) {
 
     @Synchronized
     fun setPlaybackSpeed(speed: Float) {
+        currentSpeed = speed.coerceIn(0.5f, 3.0f)
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
                 mediaPlayer?.let { mp ->
                     if (_isPrepared.value) {
                         val params = mp.playbackParams
-                        params.speed = speed.coerceIn(0.5f, 3.0f)
+                        params.speed = currentSpeed
+                        params.pitch = 1.0f // Guarantee natural voice pitch (no deep/lower pitch modulation)
+                        params.audioFallbackMode = android.media.PlaybackParams.AUDIO_FALLBACK_MODE_DEFAULT
                         mp.playbackParams = params
                     }
                 }
@@ -132,6 +136,15 @@ class PodcastAudioManager(private val context: Context) {
                     _isBuffering.value = false
                     try {
                         mp.setVolume(currentVolume, currentVolume)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            if (Math.abs(currentSpeed - 1.0f) >= 0.01f) {
+                                val params = mp.playbackParams
+                                params.speed = currentSpeed
+                                params.pitch = 1.0f // Preserve natural original actor pitch
+                                params.audioFallbackMode = android.media.PlaybackParams.AUDIO_FALLBACK_MODE_DEFAULT
+                                mp.playbackParams = params
+                            }
+                        }
                     } catch (_: Exception) {}
                     Log.i("PodcastAudioManager", "Local file prepared successfully (${file.length()} bytes). Duration: ${mp.duration}ms")
                     if (isPlaybackRequested) {
@@ -181,6 +194,15 @@ class PodcastAudioManager(private val context: Context) {
                     _isBuffering.value = false
                     try {
                         mp.setVolume(currentVolume, currentVolume)
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            if (Math.abs(currentSpeed - 1.0f) >= 0.01f) {
+                                val params = mp.playbackParams
+                                params.speed = currentSpeed
+                                params.pitch = 1.0f // Preserve natural original actor pitch
+                                params.audioFallbackMode = android.media.PlaybackParams.AUDIO_FALLBACK_MODE_DEFAULT
+                                mp.playbackParams = params
+                            }
+                        }
                     } catch (_: Exception) {}
                     Log.i("PodcastAudioManager", "Stream prepared successfully. Duration: ${mp.duration}ms")
                     if (isPlaybackRequested) {

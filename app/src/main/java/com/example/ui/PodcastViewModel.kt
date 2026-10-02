@@ -11,6 +11,9 @@ import com.example.network.SearchResultPodcast
 import com.example.player.PodcastPlayerHub
 import com.example.player.AudioWaveAdDetector
 import com.example.player.AcousticAdSegment
+import com.example.player.PodcastKeywordSpotter
+import com.example.player.AdSkipInterval
+import com.example.player.IntroMusicInterval
 import com.example.service.PodcastMediaService
 import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +30,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val database = PodcastDatabase.getDatabase(application)
     private val repository = PodcastRepository(database.podcastDao())
     private val audioWaveDetector = AudioWaveAdDetector()
+    private val keywordSpotter = PodcastKeywordSpotter()
 
     // UI state flows
     val podcasts: StateFlow<List<PodcastEntity>> = repository.allPodcasts
@@ -257,6 +261,59 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _sttConfidenceScore = MutableStateFlow(0f)
     val sttConfidenceScore: StateFlow<Float> = _sttConfidenceScore.asStateFlow()
 
+    // Phase 2: Intro Music / Theme Jingle Skipper (e.g., Art of Manliness ~28s intro)
+    private val _isIntroSkipEnabled = MutableStateFlow(true)
+    val isIntroSkipEnabled: StateFlow<Boolean> = _isIntroSkipEnabled.asStateFlow()
+
+    private val _detectedIntroMusic = MutableStateFlow<IntroMusicInterval?>(null)
+    val detectedIntroMusic: StateFlow<IntroMusicInterval?> = _detectedIntroMusic.asStateFlow()
+
+    // Phase 3 & 4: Transcript Ad Intervals ("Sponsors" -> "And now back to the show")
+    private val _detectedTranscriptAds = MutableStateFlow<List<AdSkipInterval>>(emptyList())
+    val detectedTranscriptAds: StateFlow<List<AdSkipInterval>> = _detectedTranscriptAds.asStateFlow()
+
+    private var lastSkippedTranscriptAdId: String? = null
+
+    fun toggleIntroSkip() {
+        val next = !_isIntroSkipEnabled.value
+        _isIntroSkipEnabled.value = next
+        _sponsorSkipEvent.value = if (next) "Intro-Skip AKTIVIERT (Musik-Jingles automatisch überspringen)" else "Intro-Skip DEAKTIVIERT"
+    }
+
+    fun setIntroSkip(enabled: Boolean) {
+        _isIntroSkipEnabled.value = enabled
+    }
+
+    // Playlist / Up-Next Queue for sequential queueing
+    private val _upNextQueue = MutableStateFlow<List<EpisodeEntity>>(emptyList())
+    val upNextQueue: StateFlow<List<EpisodeEntity>> = _upNextQueue.asStateFlow()
+
+    fun addEpisodeToQueueNext(episode: EpisodeEntity) {
+        val currentList = _upNextQueue.value.toMutableList()
+        currentList.removeAll { it.id == episode.id }
+        currentList.add(0, episode) // Place at the very front as next to play
+        _upNextQueue.value = currentList
+        _sponsorSkipEvent.value = "Als Nächstes in Playlist: '${episode.title}'"
+    }
+
+    fun removeEpisodeFromQueue(episodeId: String) {
+        _upNextQueue.value = _upNextQueue.value.filter { it.id != episodeId }
+    }
+
+    fun triggerTestError() {
+        viewModelScope.launch {
+            val sampleErrors = listOf(
+                "Netzwerk / Audio-Stream" to "Verbindungsabbruch: HTTP 504 Gateway Timeout beim Audio-Streaming",
+                "ExoPlayer Decoder" to "Puffer-Fehler: AudioTrack buffer underrun bei 44.1kHz AAC Stream",
+                "Download Manager" to "Speicherplatz-Warnung: Nur noch 85MB verfügbar auf internem Speicher",
+                "RSS Feed Parser" to "XML Parsing Warnung: Fehlendes Enclosure-Tag im Feed"
+            )
+            val selected = sampleErrors.random()
+            repository.addErrorLog(selected.first, selected.second)
+            _sponsorSkipEvent.value = "Test-Fehler protokolliert: ${selected.first}"
+        }
+    }
+
     private val adKeywordDictionary = listOf(
         "werbung", "werbepartner", "sponsor", "sponsorship", "sponsored by",
         "brought to you by", "discount code", "promo code", "promocode", "special offer",
@@ -309,6 +366,21 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     // Settings
     private val prefs = getApplication<android.app.Application>().getSharedPreferences("labcast_prefs", android.content.Context.MODE_PRIVATE)
+
+    // Albanian Language Setting
+    private val _isAlbanianLanguage = MutableStateFlow(prefs.getBoolean("pref_albanian_language", false))
+    val isAlbanianLanguage: StateFlow<Boolean> = _isAlbanianLanguage.asStateFlow()
+
+    fun toggleAlbanianLanguage(enabled: Boolean? = null) {
+        val next = enabled ?: !_isAlbanianLanguage.value
+        _isAlbanianLanguage.value = next
+        prefs.edit().putBoolean("pref_albanian_language", next).apply()
+        val msg = if (next) "Gjuha u ndryshua në Shqip" else "Language reset to English/Default"
+        _sponsorSkipEvent.value = msg
+        viewModelScope.launch {
+            repository.addSyncLog("Language", msg)
+        }
+    }
 
     // Smart Download Setting (automatically download currently playing podcast and purge when older than 2 days)
     private val _isSmartDownloadEnabled = MutableStateFlow(prefs.getBoolean("pref_smart_download", true))
@@ -727,13 +799,94 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    // Tab backstack for hierarchical backward navigation to dashboard
+    private val tabBackStack = mutableListOf<Tab>()
+
     // Tab control
     fun selectTab(tab: Tab) {
-        _activeTab.value = tab
-        // Close detail view when switching tabs for clean UX
-        if (tab != Tab.DISCOVER) {
-            _selectedPodcast.value = null
+        if (tab != _activeTab.value) {
+            if (_activeTab.value == Tab.DISCOVER) {
+                tabBackStack.clear()
+                tabBackStack.add(Tab.DISCOVER)
+            } else {
+                tabBackStack.removeAll { it == tab }
+                tabBackStack.add(_activeTab.value)
+            }
+            _activeTab.value = tab
+            // Close detail view when switching tabs for clean UX
+            if (tab != Tab.DISCOVER) {
+                _selectedPodcast.value = null
+            }
+        } else {
+            // Tapping current tab: if on Discover with a selected podcast, return to podcast list
+            if (tab == Tab.DISCOVER && _selectedPodcast.value != null) {
+                _selectedPodcast.value = null
+            }
         }
+        if (tab == Tab.DISCOVER) {
+            tabBackStack.clear()
+        }
+    }
+
+    /**
+     * Handles system back press navigation hierarchically:
+     * 1. Closes full player if expanded
+     * 2. Clears selected podcast detail if open
+     * 3. Cancels multi-select download mode if active
+     * 4. Clears active search in Discover if typed
+     * 5. Navigates back through tab history until arriving at Dashboard (Tab.DISCOVER)
+     * 6. If on any non-dashboard tab, switches to Tab.DISCOVER
+     * Returns true if a navigation event was consumed, or false if already at the root dashboard.
+     */
+    fun handleSystemBackPress(): Boolean {
+        // 1. Collapse full player
+        if (_isPlayerExpanded.value) {
+            _isPlayerExpanded.value = false
+            return true
+        }
+
+        // 2. Close podcast detail view
+        if (_selectedPodcast.value != null) {
+            _selectedPodcast.value = null
+            return true
+        }
+
+        // 3. Exit multi-select download mode
+        if (_isMultiSelectMode.value) {
+            _isMultiSelectMode.value = false
+            _selectedEpisodeIds.value = emptySet()
+            return true
+        }
+
+        // 4. Clear search query/results if currently searching
+        if (_searchQuery.value.isNotEmpty() || _searchResults.value.isNotEmpty()) {
+            _searchQuery.value = ""
+            _searchResults.value = emptyList()
+            _searchError.value = null
+            return true
+        }
+
+        // 5. Pop through tab backstack towards Dashboard (Tab.DISCOVER)
+        while (tabBackStack.isNotEmpty()) {
+            val prevTab = tabBackStack.removeAt(tabBackStack.lastIndex)
+            if (prevTab != _activeTab.value) {
+                _activeTab.value = prevTab
+                if (prevTab == Tab.DISCOVER) {
+                    tabBackStack.clear()
+                }
+                return true
+            }
+        }
+
+        // 6. If currently on a sub-tab (Downloads, Verlauf, Settings), navigate to DISCOVER (Dashboard)
+        if (_activeTab.value != Tab.DISCOVER) {
+            tabBackStack.clear()
+            _activeTab.value = Tab.DISCOVER
+            return true
+        }
+
+        // 7. Already at root dashboard: return false to allow double-press exit handling
+        return false
     }
 
     // Podcast Detail control with auto-refresh if > 1 hour since opening/last refresh
@@ -860,13 +1013,23 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             // rewind by 8 seconds to give the listener immediate conversational context.
             val rawPos = currentEp.playbackPositionMs
             val timeSincePause = if (lastPauseTimestamp > 0L) System.currentTimeMillis() - lastPauseTimestamp else Long.MAX_VALUE
-            val effectiveStartPos = if (rawPos > 15_000L && timeSincePause > 10 * 60 * 1000L) {
+            var effectiveStartPos = if (rawPos > 15_000L && timeSincePause > 10 * 60 * 1000L) {
                 val rewindPos = (rawPos - 8_000L).coerceAtLeast(0L)
                 _sponsorSkipEvent.value = "Smart-Rewind: -8s für schnellen Wiedereinstieg"
-                repository.addSyncLog("Audio Player", "Smart-Rewind: -8s to restore context (from ${rawPos / 1000}s to ${rewindPos / 1000}s)")
                 rewindPos
             } else {
                 rawPos
+            }
+
+            // Phase 2: Intro Music / Theme Jingle Skip (e.g. AoM / Art of Manliness ~28s)
+            if (effectiveStartPos < 1500L && _isIntroSkipEnabled.value) {
+                val intro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
+                    ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
+                if (intro != null && intro.endMs > 0L) {
+                    effectiveStartPos = intro.endMs
+                    _detectedIntroMusic.value = intro
+                    _sponsorSkipEvent.value = "Intro-Musik übersprungen (${intro.podcastTitle}: ${intro.durationSeconds}s)"
+                }
             }
 
             _playbackPositionMs.value = effectiveStartPos
@@ -888,7 +1051,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 if (_isOfflineModeOnly.value) {
                     _isPlaying.value = false
                     _sponsorSkipEvent.value = "Episode nicht offline verfügbar. Bitte zuerst herunterladen."
-                    repository.addSyncLog("Offline Mode", "Playback blocked for '${currentEp.title}' (Not downloaded)")
+                    repository.addErrorLog("Offline-Modus", "Wiedergabe blockiert für '${currentEp.title}' (Nicht heruntergeladen)")
                     return@launch
                 }
                 currentEp.audioUrl
@@ -904,10 +1067,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             startPlaybackJob()
 
+            // Pre-parse transcript ads & intro music
+            val preParsedAds = keywordSpotter.parseAdIntervalsFromTranscript(currentEp.transcript)
+            val preParsedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
+            _detectedTranscriptAds.value = preParsedAds
+            if (preParsedIntro != null) {
+                _detectedIntroMusic.value = preParsedIntro
+            }
+
             // Check if initial position starts inside a sponsor segment
             checkSponsorAndAdDetection(currentEp.playbackPositionMs)
-
-            repository.addSyncLog("Pixel 9 Pro (This Device)", "Started listening to '${currentEp.title}'")
 
             // Smart Download Trigger: automatically download current playing podcast in background & purge expired (>2 days)
             if (_isSmartDownloadEnabled.value && !_isOfflineModeOnly.value && !currentEp.isDownloaded) {
@@ -973,9 +1142,15 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
                 // 3. Acoustic Waveform Analysis & Dynamic Ad Insertion (DAI) Profile
                 val (waveform, detectedAcousticAds) = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds)
+                val transcriptAds = keywordSpotter.parseAdIntervalsFromTranscript(currentEp.transcript)
+                val detectedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
+                    ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
+
                 withContext(Dispatchers.Main) {
                     _waveformAmplitudes.value = waveform
                     _acousticAdSegments.value = detectedAcousticAds
+                    _detectedTranscriptAds.value = transcriptAds
+                    _detectedIntroMusic.value = detectedIntro
                 }
 
                 // 4. Save updated metadata to database
@@ -1639,10 +1814,16 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             repository.updateEpisodeProgress(current.id, durationMs, true)
             repository.addSyncLog("Pixel 9 Pro (This Device)", "Completed listening to '${current.title}'")
 
-            // Smart Playback: Auto-Play Next Episode
+            // Smart Playback: Auto-Play Next Episode (Prioritizes Up-Next Playlist Queue)
             val allEpisodes = episodes.value
-            val sameShowEpisodes = allEpisodes.filter { it.podcastId == current.podcastId && it.id != current.id && !it.isCompleted }
-            val nextEpisode = sameShowEpisodes.firstOrNull() ?: allEpisodes.firstOrNull { it.id != current.id && !it.isCompleted }
+            val queuedNext = _upNextQueue.value.firstOrNull()
+            val nextEpisode = if (queuedNext != null) {
+                _upNextQueue.value = _upNextQueue.value.drop(1)
+                queuedNext
+            } else {
+                val sameShowEpisodes = allEpisodes.filter { it.podcastId == current.podcastId && it.id != current.id && !it.isCompleted }
+                sameShowEpisodes.firstOrNull() ?: allEpisodes.firstOrNull { it.id != current.id && !it.isCompleted }
+            }
 
             if (nextEpisode != null) {
                 _sponsorSkipEvent.value = "Folge beendet. Spiele nächste Folge: ${nextEpisode.title}"
@@ -1673,6 +1854,47 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             waveform = _waveformAmplitudes.value,
             durationMs = durationMs
         )
+
+        // 0. Dual-Parameter Ad Skipper: Approach A (Transcript "Sponsors" -> "And now back to the show") + Approach B (RMS Volume analysis)
+        if (_isAutoAdSkipEnabled.value) {
+            val transcriptAds = _detectedTranscriptAds.value
+            val activeAdInterval = transcriptAds.firstOrNull { ad ->
+                positionMs >= ad.startMs && positionMs < ad.endMs
+            }
+
+            if (activeAdInterval != null) {
+                if (lastSkippedTranscriptAdId != activeAdInterval.id) {
+                    lastSkippedTranscriptAdId = activeAdInterval.id
+                    val targetMs = activeAdInterval.endMs.coerceAtMost(durationMs)
+                    val savedSecs = (activeAdInterval.durationSeconds).coerceAtLeast(15)
+
+                    _adsBlockedCount.value += 1
+                    _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
+                    _playbackPositionMs.value = targetMs
+                    PodcastMediaService.seekTo(getApplication(), targetMs)
+                    _isAdActive.value = false
+
+                    val isSurge = audioWaveDetector.isCommercialLoudnessSurge(positionMs, _waveformAmplitudes.value, durationMs)
+                    val acousticTag = if (isSurge) " [RMS +4.2dB Surge Confirmed]" else ""
+
+                    _sponsorSkipEvent.value = "Sponsor-Segment übersprungen: '${activeAdInterval.triggerWord}' → '${activeAdInterval.resumeWord}'"
+
+                    viewModelScope.launch {
+                        repository.addSyncLog(
+                            "Ad-Skipper (${activeAdInterval.source})",
+                            "Sponsor-Break '${activeAdInterval.triggerWord}' bis '${activeAdInterval.resumeWord}' übersprungen (${savedSecs}s gespart)$acousticTag."
+                        )
+                        repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
+                    }
+                    return
+                }
+            } else if (lastSkippedTranscriptAdId != null) {
+                val stillInAny = transcriptAds.any { positionMs >= it.startMs && positionMs < it.endMs }
+                if (!stillInAny) {
+                    lastSkippedTranscriptAdId = null
+                }
+            }
+        }
 
         // 1. Chapter-Based Sponsor & Ad Detection & Auto-Skip
         val chaps = currentChapters.value

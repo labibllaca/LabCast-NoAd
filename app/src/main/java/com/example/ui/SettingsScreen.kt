@@ -41,6 +41,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
 
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val isAutoAdSkip by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val isIntroSkip by viewModel.isIntroSkipEnabled.collectAsStateWithLifecycle()
     val isSmartDownload by viewModel.isSmartDownloadEnabled.collectAsStateWithLifecycle()
     val isOfflineOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
     val isLoggingEnabled by viewModel.isLoggingEnabled.collectAsStateWithLifecycle()
@@ -58,6 +59,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
     val isNetworkOnline by viewModel.isNetworkOnline.collectAsStateWithLifecycle()
     val networkConnectionType by viewModel.networkConnectionType.collectAsStateWithLifecycle()
     val networkRetryStatus by viewModel.networkRetryStatus.collectAsStateWithLifecycle()
+    val isAlbanianLanguage by viewModel.isAlbanianLanguage.collectAsStateWithLifecycle()
 
     var repoInput by remember(gitHubRepo) { mutableStateOf(gitHubRepo) }
 
@@ -91,15 +93,102 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Einstellungen",
+                            text = AppLanguage.settingsTitle(isAlbanianLanguage),
                             color = colors.textPrimary,
                             fontSize = 24.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "Erscheinungsbild, GitHub Releases & CI/CD",
+                            text = AppLanguage.settingsSubtitle(isAlbanianLanguage),
                             color = colors.textMuted,
                             fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // SECTION 0: LANGUAGE SWITCHER (Albanian / Default)
+        // ==========================================
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.5.dp, if (isAlbanianLanguage) CyberGreen.copy(alpha = 0.8f) else colors.itemBorder),
+                modifier = Modifier.fillMaxWidth().testTag("language_settings_card")
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isAlbanianLanguage) CyberGreen.copy(alpha = 0.2f) else colors.itemBorder.copy(alpha = 0.3f))
+                                    .border(1.dp, if (isAlbanianLanguage) CyberGreen else colors.itemBorder, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.Translate,
+                                    contentDescription = "Language",
+                                    tint = if (isAlbanianLanguage) CyberGreen else colors.textMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = AppLanguage.albanianSwitchTitle(isAlbanianLanguage),
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (isAlbanianLanguage) CyberGreen.copy(alpha = 0.2f) else colors.itemBorder.copy(alpha = 0.4f),
+                                        border = BorderStroke(1.dp, if (isAlbanianLanguage) CyberGreen else colors.itemBorder)
+                                    ) {
+                                        Text(
+                                            text = if (isAlbanianLanguage) "🇦🇱 SHQIP" else "EN / DE",
+                                            color = if (isAlbanianLanguage) CyberGreen else colors.textMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = AppLanguage.albanianSwitchSubtitle(isAlbanianLanguage),
+                                    color = colors.textMuted,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Switch(
+                            checked = isAlbanianLanguage,
+                            onCheckedChange = { viewModel.toggleAlbanianLanguage(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = CyberGreen,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.inputBg
+                            ),
+                            modifier = Modifier.testTag("switch_albanian_language")
                         )
                     }
                 }
@@ -474,19 +563,36 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                     Spacer(modifier = Modifier.height(10.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.Top
                                     ) {
-                                        Text(
-                                            text = "Paket: ${release.assetName}",
-                                            color = colors.textMuted,
-                                            fontSize = 11.sp
-                                        )
-                                        Text(
-                                            text = "${release.assetSizeBytes / 1_000_000} MB",
-                                            color = CyberGreen,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                            Text(
+                                                text = "Release-Paket",
+                                                color = colors.textMuted,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = release.assetName,
+                                                color = colors.textPrimary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = CyberGreen.copy(alpha = 0.15f),
+                                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f))
+                                        ) {
+                                            Text(
+                                                text = "${release.assetSizeBytes / 1_000_000} MB",
+                                                color = CyberGreen,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                            )
+                                        }
                                     }
 
                                     // Progress bar if downloading
@@ -756,12 +862,28 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                 text = "Automatischer Sponsor-Skip",
                                 color = colors.textPrimary,
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Bold
                             )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Surface(
+                                color = (if (isAutoAdSkip) CyberGreen else colors.textMuted).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, (if (isAutoAdSkip) CyberGreen else colors.textMuted).copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = "DUAL: TEXT + RMS",
+                                    color = if (isAutoAdSkip) CyberGreen else colors.textMuted,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Überspringt Werbeblöcke in < 250ms",
+                                text = "Überspringt Werbeblöcke von 'Sponsors' bis 'Back to the show' mit RMS-Lautstärkeabgleich in < 250ms.",
                                 color = colors.textMuted,
-                                fontSize = 12.sp
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
                             )
                         }
                         Switch(
@@ -777,6 +899,57 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Intro-Musik Skip Toggle (Phase 2 - e.g. Art of Manliness)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Intro-Musik & Jingles überspringen",
+                                color = colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Surface(
+                                color = CyberGreen.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = "AOM PRESET: 28s",
+                                    color = CyberGreen,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Überspringt musikalische Anfangs-Jingles (z. B. The Art of Manliness Rock-Intro) automatisch bis zum Sprechbeginn.",
+                                color = colors.textMuted,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isIntroSkip,
+                            onCheckedChange = { viewModel.setIntroSkip(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = CyberGreen,
+                                uncheckedThumbColor = colors.textMuted,
+                                uncheckedTrackColor = colors.inputBg
+                            ),
+                            modifier = Modifier.testTag("toggle_intro_music_skip")
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     // Smart Download Toggle
@@ -786,29 +959,27 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Smart Download",
+                                color = colors.textPrimary,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Surface(
+                                color = (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.3f))
+                            ) {
                                 Text(
-                                    text = "Smart Download",
-                                    color = colors.textPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
+                                    text = if (isSmartDownload) "2 TAGE AUTO-CLEAN" else "INAKTIV",
+                                    color = if (isSmartDownload) CyberGreen else colors.textMuted,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    color = (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(4.dp),
-                                    border = BorderStroke(1.dp, (if (isSmartDownload) CyberGreen else colors.textMuted).copy(alpha = 0.3f))
-                                ) {
-                                    Text(
-                                        text = if (isSmartDownload) "2 TAGE AUTO-CLEAN" else "INAKTIV",
-                                        color = if (isSmartDownload) CyberGreen else colors.textMuted,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                    )
-                                }
                             }
-                            Spacer(modifier = Modifier.height(2.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Lädt die aktuell wiedergegebene Episode automatisch herunter und entfernt sie nach 2 Tagen (>48h).",
                                 color = colors.textMuted,
@@ -905,38 +1076,35 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        if (isNetworkOnline) Icons.Default.Wifi else Icons.Default.WifiOff,
-                                        contentDescription = null,
-                                        tint = if (isNetworkOnline) CyberGreen else ErrorRed,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Verbindungsstatus & Retry-Logik",
-                                        color = colors.textPrimary,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Surface(
-                                    color = (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = BorderStroke(1.dp, (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.3f))
-                                ) {
-                                    Text(
-                                        text = if (isNetworkOnline) networkConnectionType else "Offline",
-                                        color = if (isNetworkOnline) CyberGreen else ErrorRed,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                                Icon(
+                                    if (isNetworkOnline) Icons.Default.Wifi else Icons.Default.WifiOff,
+                                    contentDescription = null,
+                                    tint = if (isNetworkOnline) CyberGreen else ErrorRed,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Verbindungsstatus & Retry-Logik",
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, (if (isNetworkOnline) CyberGreen else ErrorRed).copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = if (isNetworkOnline) networkConnectionType else "Offline",
+                                    color = if (isNetworkOnline) CyberGreen else ErrorRed,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -971,14 +1139,21 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = "AKTIVER RETRY: ${status.phase.label}",
+                                                    text = "AKTIVER RETRY",
                                                     color = Color(0xFFFF9900),
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Black
                                                 )
                                                 Text(
-                                                    text = status.userFriendlyMessage,
+                                                    text = status.phase.label,
                                                     color = colors.textPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = status.userFriendlyMessage,
+                                                    color = colors.textMuted,
                                                     fontSize = 11.sp
                                                 )
                                             }
@@ -1009,11 +1184,22 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
         item {
             var showClearConfirm by remember { mutableStateOf(false) }
 
-            val filteredLogs = remember(syncLogs, logFilterTag) {
+            val errorLogs = remember(syncLogs) {
+                syncLogs.filter { log ->
+                    val text = "${log.deviceName} ${log.action}".lowercase()
+                    text.contains("error") || text.contains("fehler") || text.contains("failed") ||
+                    text.contains("failure") || text.contains("blocked") || text.contains("exception") ||
+                    text.contains("timeout") || text.contains("warn") || text.contains("issue") ||
+                    text.contains("interrupted") || text.contains("disconnected") || text.contains("corrupt") ||
+                    text.contains("unreachable")
+                }
+            }
+
+            val filteredLogs = remember(errorLogs, logFilterTag) {
                 if (logFilterTag == "ALL") {
-                    syncLogs
+                    errorLogs
                 } else {
-                    syncLogs.filter { it.deviceName.contains(logFilterTag, ignoreCase = true) || it.action.contains(logFilterTag, ignoreCase = true) }
+                    errorLogs.filter { it.deviceName.contains(logFilterTag, ignoreCase = true) || it.action.contains(logFilterTag, ignoreCase = true) }
                 }
             }
 
@@ -1031,14 +1217,14 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Default.Terminal,
+                                Icons.Default.WarningAmber,
                                 contentDescription = null,
-                                tint = CyberGreen,
+                                tint = if (errorLogs.isNotEmpty()) Color(0xFFF59E0B) else CyberGreen,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Protokollierung & App-Logs",
+                                text = "Fehler- & Diagnose-Logs",
                                 color = colors.textPrimary,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
@@ -1048,12 +1234,12 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         // Log count badge
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (isLoggingEnabled) CyberGreen.copy(alpha = 0.15f) else colors.itemBorder.copy(alpha = 0.5f),
-                            border = BorderStroke(1.dp, if (isLoggingEnabled) CyberGreen.copy(alpha = 0.4f) else colors.itemBorder)
+                            color = if (errorLogs.isNotEmpty()) ErrorRed.copy(alpha = 0.15f) else CyberGreen.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, if (errorLogs.isNotEmpty()) ErrorRed.copy(alpha = 0.4f) else CyberGreen.copy(alpha = 0.4f))
                         ) {
                             Text(
-                                text = "${syncLogs.size} Logs",
-                                color = if (isLoggingEnabled) CyberGreen else colors.textMuted,
+                                text = if (errorLogs.isEmpty()) "0 Fehler" else "${errorLogs.size} Issues",
+                                color = if (errorLogs.isNotEmpty()) ErrorRed else CyberGreen,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1063,7 +1249,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Echtzeit-Diagnose und Aufzeichnung von Wiedergabe-Ereignissen, Sponsor-Skips, Feed-Synchronisationen und System-Status.",
+                        text = "Protokolliert ausschließlich Probleme, Netzwerkabbrüche und Fehler bei der Interaktion (Audio, Netzwerk, Downloads).",
                         color = colors.textMuted,
                         fontSize = 13.sp,
                         lineHeight = 18.sp
@@ -1079,13 +1265,13 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "App-Logging aktivieren",
+                                text = "Fehler-Erfassung aktivieren",
                                 color = colors.textPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = if (isLoggingEnabled) "Ereignisse & Aktionen werden protokolliert" else "Protokollierung ist pausiert",
+                                text = if (isLoggingEnabled) "Fehler & Ausfälle werden live aufgezeichnet" else "Fehler-Erfassung pausiert",
                                 color = colors.textMuted,
                                 fontSize = 12.sp
                             )
@@ -1111,11 +1297,11 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         val filterOptions = listOf(
-                            "ALL" to "Alle",
-                            "Ad" to "Ad-Skip",
-                            "Timer" to "Timer",
-                            "Feed" to "Feed",
-                            "OTA" to "Update"
+                            "ALL" to "Alle Fehler",
+                            "Audio" to "Player",
+                            "Netzwerk" to "Netzwerk",
+                            "Download" to "Downloads",
+                            "OTA" to "Updates"
                         )
 
                         filterOptions.forEach { (tagKey, tagLabel) ->
@@ -1163,16 +1349,23 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Icon(
-                                        Icons.Default.Notes,
+                                        Icons.Default.CheckCircle,
                                         contentDescription = null,
-                                        tint = colors.textMuted.copy(alpha = 0.5f),
+                                        tint = CyberGreen,
                                         modifier = Modifier.size(28.dp)
                                     )
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
-                                        text = if (syncLogs.isEmpty()) "Keine Protokolleinträge vorhanden." else "Keine Einträge für diesen Filter.",
+                                        text = if (errorLogs.isEmpty()) "Keine Fehler oder Probleme festgestellt." else "Keine Einträge für diesen Filter.",
+                                        color = colors.textPrimary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Alle Komponenten laufen stabil und fehlerfrei.",
                                         color = colors.textMuted,
-                                        fontSize = 12.sp
+                                        fontSize = 11.sp
                                     )
                                 }
                             }
@@ -1188,11 +1381,10 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                     val dateStr = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
 
                                     val badgeColor = when {
-                                        log.deviceName.contains("Ad", ignoreCase = true) || log.action.contains("Ad", ignoreCase = true) -> Color(0xFFEAB308)
-                                        log.deviceName.contains("Timer", ignoreCase = true) || log.action.contains("Timer", ignoreCase = true) -> Color(0xFF38BDF8)
+                                        log.deviceName.contains("Audio", ignoreCase = true) || log.action.contains("Audio", ignoreCase = true) -> Color(0xFFEAB308)
+                                        log.deviceName.contains("Netzwerk", ignoreCase = true) || log.action.contains("Netzwerk", ignoreCase = true) -> Color(0xFF38BDF8)
                                         log.deviceName.contains("OTA", ignoreCase = true) || log.action.contains("GitHub", ignoreCase = true) -> CyberGreen
-                                        log.action.contains("Error", ignoreCase = true) || log.action.contains("Fehler", ignoreCase = true) -> ErrorRed
-                                        else -> CyberGreen
+                                        else -> ErrorRed
                                     }
 
                                     Column(
@@ -1254,14 +1446,14 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         // Copy Logs
                         OutlinedButton(
                             onClick = {
-                                val allText = syncLogs.joinToString("\n") { log ->
+                                val allText = errorLogs.joinToString("\n") { log ->
                                     val time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(log.timestamp))
                                     "[$time] [${log.deviceName}] ${log.action}"
                                 }
                                 val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                                val clip = android.content.ClipData.newPlainText("LabCast App Logs", allText)
+                                val clip = android.content.ClipData.newPlainText("LabCast Error Logs", allText)
                                 clipboard?.setPrimaryClip(clip)
-                                android.widget.Toast.makeText(context, "${syncLogs.size} Logs kopiert", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, "${errorLogs.size} Fehler-Logs kopiert", android.widget.Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textPrimary),
                             border = BorderStroke(1.dp, colors.itemBorder),
@@ -1274,11 +1466,11 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             Text("Kopieren", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
 
-                        // Write Test Log
+                        // Write Test Error Log
                         OutlinedButton(
                             onClick = {
-                                viewModel.addManualLogEntry("Diagnose", "Manueller Diagnose-Ping ausgelöst. System OK.")
-                                android.widget.Toast.makeText(context, "Test-Log hinzugefügt", android.widget.Toast.LENGTH_SHORT).show()
+                                viewModel.triggerTestError()
+                                android.widget.Toast.makeText(context, "Test-Fehler protokolliert", android.widget.Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberGreen),
                             border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
@@ -1288,7 +1480,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         ) {
                             Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Test-Log", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Fehler testen", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
 
                         // Clear Logs

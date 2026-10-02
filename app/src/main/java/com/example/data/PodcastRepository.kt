@@ -59,8 +59,39 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.insertEpisodes(withTimestamps)
     }
 
-    suspend fun addSyncLog(deviceName: String, action: String) {
-        podcastDao.insertSyncLog(SyncLogEntity(deviceName = deviceName, action = action))
+    /**
+     * Checks whether a log message represents a genuine error, warning, or operational failure.
+     * Routine user actions (play, pause, seek, language switch) are filtered out to keep logs clean.
+     */
+    fun isIssueOrError(deviceName: String, action: String): Boolean {
+        val text = "$deviceName $action".lowercase()
+        return text.contains("error") ||
+               text.contains("fehler") ||
+               text.contains("failed") ||
+               text.contains("failure") ||
+               text.contains("blocked") ||
+               text.contains("exception") ||
+               text.contains("timeout") ||
+               text.contains("dropped") ||
+               text.contains("warn") ||
+               text.contains("issue") ||
+               text.contains("interrupted") ||
+               text.contains("disconnected") ||
+               text.contains("corrupt") ||
+               text.contains("unreachable") ||
+               text.contains("problem")
+    }
+
+    suspend fun addSyncLog(deviceName: String, action: String, forceLog: Boolean = false) {
+        // Only persist genuine issues and errors so Settings displays interaction issues
+        if (forceLog || isIssueOrError(deviceName, action)) {
+            podcastDao.insertSyncLog(SyncLogEntity(deviceName = deviceName, action = action))
+        }
+    }
+
+    suspend fun addErrorLog(component: String, errorMessage: String, details: String? = null) {
+        val fullMsg = if (details.isNullOrBlank()) "Fehler: $errorMessage" else "Fehler: $errorMessage [$details]"
+        addSyncLog(component, fullMsg, forceLog = true)
     }
 
     suspend fun removePodcast(podcast: PodcastEntity) {
@@ -230,7 +261,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "180,840,1500",
                 chapters = "0:Welcome & Guest Intro|180:Sponsor: BetterHelp|270:Micro-Expressions and Verbal Cues|540:The Anatomy of Social Engineering|840:Sponsor: Shopify|930:Emotional Anchoring Techniques|1500:Sponsor: SimpliSafe|1590:Building Psychological Resilience|1950:Jordan's Final Thoughts",
-                transcript = "0:00 [Jordan] Welcome to the Jordan Harbinger Show. Today we're deconstructing deception detection tactics.\n03:00 [Sponsor Break] This episode is brought to you by BetterHelp online therapy. Visit betterhelp.com/jordan for 10% off.\n04:30 [Guest] When people lie under stress, micro-expressions reveal hidden emotional state.\n14:00 [Sponsor Break] Sponsored by Shopify. Build your online business today for just \$1 per month at shopify.com/jordan.\n25:00 [Sponsor Break] Supported by SimpliSafe home security systems. Protect your home with 24/7 monitoring.",
+                transcript = "0:00 [Jordan] Welcome to the Jordan Harbinger Show. Today we're deconstructing deception detection tactics.\n03:00 [Sponsor Break] Sponsors: This episode is brought to you by BetterHelp online therapy. Visit betterhelp.com/jordan for 10% off. And now back to the show.\n04:30 [Guest] When people lie under stress, micro-expressions reveal hidden emotional state.\n14:00 [Sponsor Break] Sponsors: Sponsored by Shopify. Build your online business today for just \$1 per month at shopify.com/jordan. And now back to the show.\n25:00 [Sponsor Break] Sponsors: Supported by SimpliSafe home security systems. Protect your home with 24/7 monitoring. And now back to the show.",
                 publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-02")
             ),
             EpisodeEntity(
@@ -246,8 +277,8 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 isDownloaded = false,
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "240,900",
-                chapters = "0:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up",
-                transcript = "0:00 [Brett] Welcome back to the Art of Manliness podcast. Today we discuss stoic resilience.\n04:00 [Sponsor Break] Brought to you by Huckberry. Exceptional outdoor gear, boots, and clothing. Use code AOM20.\n05:30 [Brett] Epictetus famously wrote that we control our intentions and actions, but not external events.\n15:00 [Sponsor Break] Sponsored by Factor Meals. Fresh, chef-crafted meals delivered right to your doorstep.",
+                chapters = "0:Intro Theme Music (AoM)|28:Introduction & The Dichotomy of Control|240:Sponsor: Huckberry|330:Meditations of Marcus Aurelius|660:Voluntary Discomfort as a Tool|900:Sponsor: Factor Meals|990:The View From Above & Perspective|1560:Practical Daily Stoic Habits|1800:Wrap-up",
+                transcript = "0:00 [Intro Music] AoM Theme Music / Electric guitar & drums intro.\n0:28 [Brett McKay] Welcome to another edition of The Art of Manliness podcast. Today we discuss stoic resilience.\n04:00 [Sponsor Break] Sponsors: Brought to you by Huckberry. Exceptional outdoor gear, boots, and clothing. Use code AOM20. And now back to the show.\n05:30 [Brett McKay] Epictetus famously wrote that we control our intentions and actions, but not external events.\n15:00 [Sponsor Break] Sponsors: Sponsored by Factor Meals. Fresh, chef-crafted meals delivered right to your doorstep. And now back to the show.\n16:30 [Brett McKay] Practicing voluntary discomfort trains the mind.",
                 publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-01")
             ),
             EpisodeEntity(
@@ -264,7 +295,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "300,1200",
                 chapters = "0:Introduction & Genesis of Purpose|300:Sponsor: DailyWire+|390:Chaos, Order, and the Sacred Border|840:The Hero's Journey Across Cultures|1200:Sponsor: ExpressVPN|1290:Voluntary Confrontation with Adversity|2100:The Role of Art & Conscience|2550:Closing Reflections",
-                transcript = "0:00 [Dr. Peterson] Hello everyone. Today's discussion focuses on voluntary responsibility.\n05:00 [Sponsor Break] This episode is brought to you by DailyWire+. Access exclusive documentaries and news.\n06:30 [Dr. Peterson] When you adopt responsibility for your life and community, meaning emerges naturally.\n20:00 [Sponsor Break] Sponsored by ExpressVPN. Protect your online data and private internet browsing.",
+                transcript = "0:00 [Dr. Peterson] Hello everyone. Today's discussion focuses on voluntary responsibility.\n05:00 [Sponsor Break] Sponsors: This episode is brought to you by DailyWire+. Access exclusive documentaries and news. And now back to the show.\n06:30 [Dr. Peterson] When you adopt responsibility for your life and community, meaning emerges naturally.\n20:00 [Sponsor Break] Sponsors: Sponsored by ExpressVPN. Protect your online data and private internet browsing. And now back to the show.",
                 publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-08-31")
             ),
             EpisodeEntity(
@@ -281,7 +312,7 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
                 playbackPositionMs = 0,
                 adTimestampsSeconds = "90,720",
                 chapters = "0:Gotham City Siren & Storm|90:Sponsor: DC Universe Infinite|180:Descent into Arkham Lower Ward|450:Encounter with Scarecrow's Toxin|720:Ad Break: Batman Graphic Novels|810:The Batmobile Pursuit through Burnside|1200:The Riddler's Cryptic Warning|1410:To Be Continued...",
-                transcript = "0:00 [Narrator] Lightning illuminates the dark skyline of Gotham City as sirens echo over Wayne Manor.\n01:30 [Sponsor Break] Brought to you by DC Universe Infinite. Read over 25,000 digital comics.\n03:00 [Batman] Alfred, scan the Arkham perimeter. We have multiple perimeter breaches on sub-level 4.\n12:00 [Sponsor Break] Special ad break for Batman Year One hardcover graphic novel collection.",
+                transcript = "0:00 [Narrator] Lightning illuminates the dark skyline of Gotham City as sirens echo over Wayne Manor.\n01:30 [Sponsor Break] Sponsors: Brought to you by DC Universe Infinite. Read over 25,000 digital comics. And now back to the show.\n03:00 [Batman] Alfred, scan the Arkham perimeter. We have multiple perimeter breaches on sub-level 4.\n12:00 [Sponsor Break] Sponsors: Special ad break for Batman Year One hardcover graphic novel collection. And now back to the show.",
                 publishTimestamp = com.example.util.PodcastDateUtils.parseDateToTimestamp("2026-09-04")
             )
         )
@@ -294,10 +325,9 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         cleanUpLegacyDummyData()
 
         prefs.edit().putBoolean("initial_podcasts_seeded", true).apply()
-
-        podcastDao.insertSyncLog(SyncLogEntity(deviceName = "System", action = "Loaded default podcasts with real podcast audio streams: Huberman Lab, Shqip Story, Harbinger, Art of Manliness, Peterson, Batman"))
         } catch (e: Exception) {
             android.util.Log.e("PodcastRepository", "Error seeding initial podcast data: ${e.message}")
+            addErrorLog("System Initializer", "Database seed failure: ${e.message}")
         }
     }
 
