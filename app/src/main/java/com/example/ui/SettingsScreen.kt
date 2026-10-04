@@ -1001,33 +1001,55 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         )
                     }
 
-                    if (isSmartDownload) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            OutlinedButton(
-                                onClick = { viewModel.manualCleanupExpiredDownloads() },
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                modifier = Modifier.height(30.dp).testTag("btn_cleanup_expired_downloads")
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // System Control & Lockscreen Integration Card
+                    Surface(
+                        color = colors.inputBg,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth().testTag("system_control_info_card")
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
                                 Icon(
-                                    Icons.Default.DeleteSweep,
-                                    contentDescription = "Downloads bereinigen",
+                                    Icons.Default.PhoneAndroid,
+                                    contentDescription = null,
                                     tint = CyberGreen,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Downloads >2 Tage jetzt prüfen",
-                                    color = CyberGreen,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "System- & Lockscreen-Steuerung",
+                                    color = colors.textPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Surface(
+                                color = CyberGreen.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = "MEDIASESSION + LOCKSCREEN AKTIV",
+                                    color = CyberGreen,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "• Sperrbildschirm & Quick-Settings Medienkarte mit Cover-Art & Scrubbing\n• Bluetooth-Headset & Headset-Tasten für Play/Pause, +15s/-15s\n• Hintergrund-Wiedergabe mit High-Performance Wifi- & WakeLock",
+                                color = colors.textMuted,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
                         }
                     }
 

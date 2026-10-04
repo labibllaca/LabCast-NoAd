@@ -589,6 +589,15 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _searchError = MutableStateFlow<String?>(null)
     val searchError: StateFlow<String?> = _searchError.asStateFlow()
 
+    private val _focusSearchTrigger = MutableStateFlow(0)
+    val focusSearchTrigger: StateFlow<Int> = _focusSearchTrigger.asStateFlow()
+
+    fun focusSearch() {
+        _selectedPodcast.value = null
+        selectTab(Tab.DISCOVER)
+        _focusSearchTrigger.value = _focusSearchTrigger.value + 1
+    }
+
     // Multi-Selection for Episodes Download
     private val _isMultiSelectMode = MutableStateFlow(false)
     val isMultiSelectMode: StateFlow<Boolean> = _isMultiSelectMode.asStateFlow()

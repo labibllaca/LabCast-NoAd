@@ -288,6 +288,32 @@ class PodcastMediaService : Service() {
                 audioManagerEngine.setVolume(vol)
                 PodcastPlayerHub.currentVolume.value = vol
             }
+            Intent.ACTION_MEDIA_BUTTON -> {
+                val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+                if (keyEvent != null && keyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                    when (keyEvent.keyCode) {
+                        android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> resumePlaybackInternal()
+                        android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> pausePlaybackInternal()
+                        android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            if (PodcastPlayerHub.isPlaying.value) pausePlaybackInternal() else resumePlaybackInternal()
+                        }
+                        android.view.KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                            val cur = audioManagerEngine.getCurrentPosition()
+                            seekToInternal(cur + 15_000L)
+                        }
+                        android.view.KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                            val cur = audioManagerEngine.getCurrentPosition()
+                            seekToInternal((cur - 15_000L).coerceAtLeast(0L))
+                        }
+                        android.view.KeyEvent.KEYCODE_MEDIA_STOP -> stopPlaybackInternal()
+                    }
+                }
+            }
         }
 
         return START_NOT_STICKY
@@ -363,6 +389,19 @@ class PodcastMediaService : Service() {
 
     private fun setupMediaSession() {
         mediaSession = MediaSession(this, "LabCastMediaSession").apply {
+            setFlags(
+                MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or
+                MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS
+            )
+            val mbIntent = Intent(Intent.ACTION_MEDIA_BUTTON, null, this@PodcastMediaService, PodcastMediaService::class.java)
+            val mbPendingIntent = PendingIntent.getService(
+                this@PodcastMediaService,
+                0,
+                mbIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            setMediaButtonReceiver(mbPendingIntent)
+
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() {
                     Log.i(TAG, "[SYSTEM-CONTROL] onPlay triggered from MediaSession / Headset")
@@ -406,6 +445,36 @@ class PodcastMediaService : Service() {
                 override fun onStop() {
                     Log.i(TAG, "[SYSTEM-CONTROL] onStop triggered from system control layer")
                     stopPlaybackInternal()
+                }
+
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                    val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                    }
+                    if (keyEvent != null && keyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY -> { resumePlaybackInternal(); return true }
+                            android.view.KeyEvent.KEYCODE_MEDIA_PAUSE -> { pausePlaybackInternal(); return true }
+                            android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, android.view.KeyEvent.KEYCODE_HEADSETHOOK -> {
+                                if (PodcastPlayerHub.isPlaying.value) pausePlaybackInternal() else resumePlaybackInternal()
+                                return true
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, android.view.KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                                val cur = audioManagerEngine.getCurrentPosition()
+                                seekToInternal(cur + 15_000L)
+                                return true
+                            }
+                            android.view.KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                                val cur = audioManagerEngine.getCurrentPosition()
+                                seekToInternal((cur - 15_000L).coerceAtLeast(0L))
+                                return true
+                            }
+                        }
+                    }
+                    return super.onMediaButtonEvent(mediaButtonIntent)
                 }
             })
             isActive = true
@@ -713,6 +782,7 @@ class PodcastMediaService : Service() {
             .setContentText(episode?.podcastTitle ?: "LabCast")
             .setContentIntent(contentPendingIntent)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setCategory(Notification.CATEGORY_TRANSPORT)
             .setOngoing(isPlaying)
             .setOnlyAlertOnce(true)
 

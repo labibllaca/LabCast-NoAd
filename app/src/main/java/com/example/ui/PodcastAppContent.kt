@@ -42,6 +42,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -298,7 +300,7 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                     isAlbanian = isAlbanianLanguage,
                     onTabSelected = { tab -> viewModel.selectTab(tab) },
                     onSearchClick = {
-                        viewModel.selectTab(PodcastViewModel.Tab.DISCOVER)
+                        viewModel.focusSearch()
                     }
                 )
             }
@@ -485,6 +487,20 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val searchError by viewModel.searchError.collectAsStateWithLifecycle()
+    val focusSearchTrigger by viewModel.focusSearchTrigger.collectAsStateWithLifecycle()
+
+    val focusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(focusSearchTrigger) {
+        if (focusSearchTrigger > 0) {
+            kotlinx.coroutines.delay(120)
+            try {
+                focusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (_: Exception) {}
+        }
+    }
 
     var selectedCategory by remember { mutableStateOf("All") }
     val categories = listOf("All", "Technology", "Science", "Wellness", "Mystery")
@@ -633,6 +649,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                             ),
                             modifier = Modifier
                                 .weight(1f)
+                                .focusRequester(focusRequester)
                                 .onKeyEvent { keyEvent ->
                                     if (keyEvent.key == Key.Enter && keyEvent.type == KeyEventType.KeyUp) {
                                         viewModel.performSearch()

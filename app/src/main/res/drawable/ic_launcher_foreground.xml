@@ -1,8 +1,81 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/labcast_icon_fg"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer Circular Accent Ring (Safe Zone Boundary Alignment) -->
+    <path
+        android:pathData="M54,23 A31,31 0 1,1 53.99,23 Z"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="2"
+        android:fillColor="#00FF88"
+        android:fillAlpha="0.08" />
+
+    <!-- Left Audio Wave Bars -->
+    <path
+        android:pathData="M27,49 L27,59"
+        android:strokeColor="#00E676"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M33,42 L33,66"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M39,46 L39,62"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+
+    <!-- Right Audio Wave Bars -->
+    <path
+        android:pathData="M69,46 L69,62"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M75,42 L75,66"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M81,49 L81,59"
+        android:strokeColor="#00E676"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round" />
+
+    <!-- Center Studio Microphone Capsule -->
+    <path
+        android:pathData="M48,43 C48,39.7 50.7,37 54,37 C57.3,37 60,39.7 60,43 L60,52 C60,55.3 57.3,58 54,58 C50.7,58 48,55.3 48,52 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Microphone Grille Mesh Lines -->
+    <path
+        android:pathData="M49.5,43 L58.5,43 M49.5,47 L58.5,47"
+        android:strokeColor="#0B0E14"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:fillAlpha="0.8" />
+
+    <!-- Center Play Triangle Badge on Mic -->
+    <path
+        android:pathData="M52.5,50.5 L56.5,52.5 L52.5,54.5 Z"
+        android:fillColor="#00E676" />
+
+    <!-- Microphone Cradle Arc -->
+    <path
+        android:pathData="M44,51 C44,57.5 49,62.5 54,62.5 C59,62.5 64,57.5 64,51"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+
+    <!-- Microphone Stand Stem & Base -->
+    <path
+        android:pathData="M54,62.5 L54,69.5 M46,69.5 L62,69.5"
+        android:strokeColor="#00FF88"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round" />
+</vector>
