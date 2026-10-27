@@ -1444,9 +1444,21 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val detectedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
                     ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
 
-                // 3b. On-Device Voz Tiny LLM STT Analysis (Concurrent Background Analysis while Playing)
+                // 3b. On-Device Voz Tiny STT Analysis & Show-Pattern Learning (Concurrent Background Analysis while Playing)
                 val vozTranscriber = VozTranscriber()
-                val vozResult = vozTranscriber.transcribeAudioAndDetectSkips(currentEp)
+                val siblingEpisodes = repository.getEpisodesForPodcast(currentEp.podcastId).firstOrNull() ?: emptyList()
+                val vozResult = vozTranscriber.transcribeAudioAndDetectSkips(currentEp, siblingEpisodes)
+
+                // If episode transcript was empty or raw, populate it with Voz STT generated sentence transcription
+                if (currentEp.transcript.isBlank() && vozResult.sentences.isNotEmpty()) {
+                    val serializedTranscript = vozResult.sentences.joinToString("\n") { sentence ->
+                        val timeFormatted = TranscriptSegment(sentence.startMs / 1000L, sentence.speaker, sentence.text).formattedTime()
+                        val sponsorTag = if (sentence.isSponsor) " [Sponsor Break]" else ""
+                        "$timeFormatted [${sentence.speaker}$sponsorTag] ${sentence.text}"
+                    }
+                    currentEp = currentEp.copy(transcript = serializedTranscript)
+                }
+
                 val vozSkipIntervals = vozResult.skipRanges.map { skip ->
                     AdSkipInterval(
                         id = skip.id,
@@ -1455,7 +1467,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         triggerWord = "Voz: ${skip.label}",
                         resumeWord = "Hauptteil",
                         confidence = skip.confidence,
-                        source = "Voz Tiny Offline STT"
+                        source = "Desert Ant Voz STT"
                     )
                 }
                 val combinedAdIntervals = (transcriptAds + vozSkipIntervals).distinctBy { it.id }
@@ -1467,10 +1479,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _detectedIntroMusic.value = detectedIntro
 
                     val adCount = combinedAdIntervals.size
-                    val consoleLine = "[VOZ CONSOLE] Stream playback active. Background audio analysis completed for '${currentEp.title}' ($adCount sponsor/ad segments identified)."
+                    val consoleLine = "[VOZ CONSOLE] Stream playback active. Background audio analysis & show-pattern learning completed for '${currentEp.title}' ($adCount sponsor/ad segments identified)."
                     Log.i("PodcastPlayer", consoleLine)
                     System.out.println(consoleLine)
-                    repository.addSyncLog("Voz AI Engine", "Echtzeit-Hintergrundanalyse abgeschlossen: $adCount Werbesegmente für '${currentEp.title}' identifiziert.")
+                    repository.addSyncLog("Voz AI Engine", "Echtzeit-Musteranalyse abgeschlossen: $adCount Werbesegmente für '${currentEp.title}' identifiziert.")
                 }
 
                 // 4. Save updated metadata to database
