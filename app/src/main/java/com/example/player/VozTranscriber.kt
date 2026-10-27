@@ -282,4 +282,25 @@ class VozTranscriber {
             WordTimestamp(word = word, startMs = wStart, endMs = wEnd)
         }
     }
+
+    /**
+     * Initializes ONNX Runtime session for 'voz.onnx' model local inference.
+     */
+    fun loadVozModel(context: android.content.Context): Boolean {
+        return VozModelManager.loadVozModel(context)
+    }
+
+    /**
+     * Generates synthesized speech using Voz ONNX model for replacing ad segments with TTS.
+     */
+    fun replaceAdWithTTS(context: android.content.Context, adText: String): java.io.File? {
+        val pcmAudio = VozModelManager.generateSpeechWithVoz(adText, context) ?: return null
+        return try {
+            val tempFile = java.io.File.createTempFile("voz_tts_ad_", ".wav", context.cacheDir)
+            tempFile.writeBytes(pcmAudio)
+            tempFile
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

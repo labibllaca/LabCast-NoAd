@@ -1446,6 +1446,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
                 // 3b. On-Device Voz Tiny STT Analysis & Show-Pattern Learning (Concurrent Background Analysis while Playing)
                 val vozTranscriber = VozTranscriber()
+                vozTranscriber.loadVozModel(getApplication())
                 val siblingEpisodes = repository.getEpisodesForPodcast(currentEp.podcastId).firstOrNull() ?: emptyList()
                 val vozResult = vozTranscriber.transcribeAudioAndDetectSkips(currentEp, siblingEpisodes)
 
