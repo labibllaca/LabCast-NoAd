@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.network.PodcastApiClient
+import com.example.network.CuratedPodcastCatalog
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
 import com.example.player.PodcastPlayerHub
@@ -598,6 +599,139 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _focusSearchTrigger.value = _focusSearchTrigger.value + 1
     }
 
+    // Producer & Artist States
+    private val _selectedProducer = MutableStateFlow<ProducerInfo?>(null)
+    val selectedProducer: StateFlow<ProducerInfo?> = _selectedProducer.asStateFlow()
+
+    private val _producerEpisodes = MutableStateFlow<List<EpisodeEntity>>(emptyList())
+    val producerEpisodes: StateFlow<List<EpisodeEntity>> = _producerEpisodes.asStateFlow()
+
+    private val _isLoadingProducerEpisodes = MutableStateFlow(false)
+    val isLoadingProducerEpisodes: StateFlow<Boolean> = _isLoadingProducerEpisodes.asStateFlow()
+
+    private val _selectedSearchFilter = MutableStateFlow(SearchFilterTab.ALL)
+    val selectedSearchFilter: StateFlow<SearchFilterTab> = _selectedSearchFilter.asStateFlow()
+
+    fun selectSearchFilter(filter: SearchFilterTab) {
+        _selectedSearchFilter.value = filter
+    }
+
+    // Reactive Producer Extraction matching query & catalog
+    val matchingProducers: StateFlow<List<ProducerInfo>> = combine(
+        _searchQuery,
+        _searchResults,
+        repository.allPodcasts
+    ) { query, searchResults, localPodcasts ->
+        val q = query.trim().lowercase()
+        val authorMap = linkedMapOf<String, MutableList<ProducerShowSummary>>()
+
+        // 1. Curated catalog shows
+        CuratedPodcastCatalog.items.forEach { item ->
+            val author = item.author.trim()
+            val show = ProducerShowSummary(
+                id = item.id,
+                title = item.title,
+                coverUrl = item.coverUrl,
+                feedUrl = item.feedUrl,
+                category = item.category,
+                trackCount = item.trackCount,
+                isSubscribed = localPodcasts.any { it.title.equals(item.title, ignoreCase = true) && it.isSubscribed }
+            )
+            authorMap.getOrPut(author) { mutableListOf() }.add(show)
+        }
+
+        // 2. Local podcasts
+        localPodcasts.forEach { pod ->
+            val author = pod.author.trim()
+            if (author.isNotBlank()) {
+                val show = ProducerShowSummary(
+                    id = pod.id,
+                    title = pod.title,
+                    coverUrl = pod.coverUrl,
+                    feedUrl = pod.feedUrl,
+                    category = pod.category,
+                    trackCount = 0,
+                    isSubscribed = pod.isSubscribed
+                )
+                val list = authorMap.getOrPut(author) { mutableListOf() }
+                if (list.none { it.title.equals(pod.title, ignoreCase = true) }) {
+                    list.add(show)
+                }
+            }
+        }
+
+        // 3. Search results
+        searchResults.forEach { res ->
+            val author = res.author.trim()
+            if (author.isNotBlank()) {
+                val show = ProducerShowSummary(
+                    id = res.id,
+                    title = res.title,
+                    coverUrl = res.coverUrl,
+                    feedUrl = res.feedUrl,
+                    category = res.category,
+                    trackCount = res.trackCount,
+                    isSubscribed = localPodcasts.any { it.title.equals(res.title, ignoreCase = true) && it.isSubscribed }
+                )
+                val list = authorMap.getOrPut(author) { mutableListOf() }
+                if (list.none { it.title.equals(res.title, ignoreCase = true) }) {
+                    list.add(show)
+                }
+            }
+        }
+
+        val allProducers = authorMap.map { (authorName, shows) ->
+            val firstCover = shows.firstOrNull { it.coverUrl.isNotBlank() }?.coverUrl ?: ""
+            val totalTracks = shows.sumOf { if (it.trackCount > 0) it.trackCount else 6 }
+            val category = shows.firstOrNull()?.category ?: "Podcast Producer"
+            val showNames = shows.map { it.title }.joinToString(", ")
+            ProducerInfo(
+                name = authorName,
+                avatarUrl = firstCover,
+                shows = shows,
+                totalEpisodesCount = totalTracks,
+                primaryCategory = category,
+                bio = "Producer of $showNames"
+            )
+        }
+
+        if (q.isBlank()) {
+            allProducers.sortedByDescending { it.totalEpisodesCount }
+        } else {
+            allProducers.filter { prod ->
+                prod.name.lowercase().contains(q) || prod.shows.any { it.title.lowercase().contains(q) }
+            }.sortedWith { p1, p2 ->
+                val p1Exact = p1.name.lowercase().contains(q)
+                val p2Exact = p2.name.lowercase().contains(q)
+                when {
+                    p1Exact && !p2Exact -> -1
+                    !p1Exact && p2Exact -> 1
+                    else -> p2.totalEpisodesCount.compareTo(p1.totalEpisodesCount)
+                }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Reactive Produced Episodes matching query
+    val matchingProducedEpisodes: StateFlow<List<EpisodeEntity>> = combine(
+        _searchQuery,
+        repository.allEpisodes,
+        repository.allPodcasts
+    ) { query, allEpisodes, allPodcasts ->
+        val q = query.trim().lowercase()
+        if (q.isBlank()) {
+            emptyList()
+        } else {
+            val podAuthorMap = allPodcasts.associate { it.id to it.author.lowercase() }
+            allEpisodes.filter { ep ->
+                ep.title.lowercase().contains(q) ||
+                ep.description.lowercase().contains(q) ||
+                ep.podcastTitle.lowercase().contains(q) ||
+                (podAuthorMap[ep.podcastId]?.contains(q) == true)
+            }.take(30)
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Multi-Selection for Episodes Download
     private val _isMultiSelectMode = MutableStateFlow(false)
     val isMultiSelectMode: StateFlow<Boolean> = _isMultiSelectMode.asStateFlow()
@@ -860,6 +994,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             return true
         }
 
+        // 2b. Close producer detail view
+        if (_selectedProducer.value != null) {
+            _selectedProducer.value = null
+            return true
+        }
+
         // 3. Exit multi-select download mode
         if (_isMultiSelectMode.value) {
             _isMultiSelectMode.value = false
@@ -912,6 +1052,154 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 Log.i("PodcastPlayer", "[SYSTEM CONSOLE] Auto-refresh triggered for '${podcast.title}' (last refresh: $timeDiffMin)")
                 refreshPodcastEpisodes(podcast.id, isAutoOneHour = true)
             }
+        }
+    }
+
+    // Producer & Artist Selection and Episode Loading
+    fun selectProducer(producer: ProducerInfo?) {
+        _selectedProducer.value = producer
+        if (producer != null) {
+            loadEpisodesForProducer(producer)
+        } else {
+            _producerEpisodes.value = emptyList()
+        }
+    }
+
+    fun selectProducerByName(producerName: String, fallbackCoverUrl: String? = null) {
+        viewModelScope.launch {
+            val allProducers = matchingProducers.value
+            val found = allProducers.firstOrNull { it.name.equals(producerName, ignoreCase = true) }
+                ?: allProducers.firstOrNull { it.name.contains(producerName, ignoreCase = true) || producerName.contains(it.name, ignoreCase = true) }
+                ?: run {
+                    val localShows = repository.allPodcasts.first().filter { it.author.contains(producerName, ignoreCase = true) }
+                    val curatedShows = CuratedPodcastCatalog.items.filter { it.author.contains(producerName, ignoreCase = true) }
+                    val shows = (localShows.map {
+                        ProducerShowSummary(it.id, it.title, it.coverUrl, it.feedUrl, it.category, isSubscribed = it.isSubscribed)
+                    } + curatedShows.map {
+                        ProducerShowSummary(it.id, it.title, it.coverUrl, it.feedUrl, it.category, trackCount = it.trackCount)
+                    }).distinctBy { it.title }
+
+                    ProducerInfo(
+                        name = producerName,
+                        avatarUrl = fallbackCoverUrl ?: shows.firstOrNull()?.coverUrl ?: "",
+                        shows = shows,
+                        totalEpisodesCount = shows.sumOf { if (it.trackCount > 0) it.trackCount else 6 },
+                        primaryCategory = shows.firstOrNull()?.category ?: "Podcast Producer",
+                        bio = "Producer of ${shows.joinToString(", ") { it.title }}"
+                    )
+                }
+            selectProducer(found)
+        }
+    }
+
+    fun selectProducerFromSearchResult(result: SearchResultPodcast) {
+        selectProducerByName(result.author, result.coverUrl)
+    }
+
+    fun loadEpisodesForProducer(producer: ProducerInfo) {
+        viewModelScope.launch {
+            _isLoadingProducerEpisodes.value = true
+            try {
+                val collectedEpisodes = mutableListOf<EpisodeEntity>()
+                val allLocalEpisodes = repository.allEpisodes.first()
+                val allLocalPodcasts = repository.allPodcasts.first()
+
+                // 1. Gather local episodes from any podcasts by this producer
+                val matchedLocalPodcasts = allLocalPodcasts.filter {
+                    it.author.equals(producer.name, ignoreCase = true) ||
+                    producer.shows.any { show -> show.id == it.id || show.title.equals(it.title, ignoreCase = true) }
+                }
+                val matchedPodcastIds = matchedLocalPodcasts.map { it.id }.toSet()
+                val localEps = allLocalEpisodes.filter { ep -> ep.podcastId in matchedPodcastIds }
+                collectedEpisodes.addAll(localEps)
+
+                // 2. For producer shows that don't have local episodes yet, fetch via RSS feed or catalog fallback
+                for (show in producer.shows) {
+                    val hasLocal = collectedEpisodes.any { it.podcastTitle.equals(show.title, ignoreCase = true) }
+                    if (!hasLocal) {
+                        val feedResult = if (show.feedUrl.isNotBlank() && show.feedUrl.startsWith("http")) {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    PodcastApiClient.fetchFeedDetails(show.feedUrl, show.title, enableRetry = true)
+                                }
+                            } catch (_: Exception) { null }
+                        } else null
+
+                        if (feedResult != null && feedResult.episodes.isNotEmpty()) {
+                            val eps = feedResult.episodes.map { fEp ->
+                                EpisodeEntity(
+                                    id = fEp.id,
+                                    podcastId = show.id,
+                                    podcastTitle = show.title,
+                                    podcastCoverUrl = fEp.episodeArtworkUrl ?: show.coverUrl,
+                                    title = fEp.title,
+                                    description = fEp.description,
+                                    durationSeconds = fEp.durationSeconds,
+                                    publishDate = fEp.publishDate,
+                                    audioUrl = fEp.audioUrl,
+                                    adTimestampsSeconds = fEp.adTimestampsSeconds,
+                                    chapters = fEp.chapters,
+                                    transcript = fEp.transcript,
+                                    publishTimestamp = if (fEp.publishTimestamp > 0L) fEp.publishTimestamp else com.example.util.PodcastDateUtils.parseDateToTimestamp(fEp.publishDate)
+                                )
+                            }
+                            collectedEpisodes.addAll(eps)
+                        } else {
+                            val fallback = CuratedPodcastCatalog.generateEpisodesForShow(show.title).map { fEp ->
+                                EpisodeEntity(
+                                    id = fEp.id,
+                                    podcastId = show.id,
+                                    podcastTitle = show.title,
+                                    podcastCoverUrl = show.coverUrl,
+                                    title = fEp.title,
+                                    description = fEp.description,
+                                    durationSeconds = fEp.durationSeconds,
+                                    publishDate = fEp.publishDate,
+                                    audioUrl = fEp.audioUrl,
+                                    adTimestampsSeconds = fEp.adTimestampsSeconds,
+                                    chapters = fEp.chapters,
+                                    transcript = fEp.transcript,
+                                    publishTimestamp = fEp.publishTimestamp
+                                )
+                            }
+                            collectedEpisodes.addAll(fallback)
+                        }
+                    }
+                }
+
+                _producerEpisodes.value = collectedEpisodes.distinctBy { it.id }.sortedWith(
+                    compareByDescending<EpisodeEntity> { it.publishTimestamp }.thenByDescending { it.publishDate }
+                )
+            } catch (e: Exception) {
+                Log.e("PodcastPlayer", "Error loading producer episodes: ${e.message}")
+            } finally {
+                _isLoadingProducerEpisodes.value = false
+            }
+        }
+    }
+
+    fun subscribeToAllShowsOfProducer(producer: ProducerInfo) {
+        viewModelScope.launch {
+            for (show in producer.shows) {
+                val existing = repository.getPodcastById(show.id)
+                if (existing == null) {
+                    val newPod = PodcastEntity(
+                        id = show.id,
+                        title = show.title,
+                        author = producer.name,
+                        description = "Show produced by ${producer.name}",
+                        coverUrl = show.coverUrl,
+                        category = show.category,
+                        isSubscribed = true,
+                        feedUrl = show.feedUrl
+                    )
+                    repository.insertPodcast(newPod)
+                } else if (!existing.isSubscribed) {
+                    repository.updatePodcast(existing.copy(isSubscribed = true))
+                }
+            }
+            repository.addSyncLog("Pixel 9 Pro", "Subscribed to shows by ${producer.name}")
+            selectProducerByName(producer.name, producer.avatarUrl)
         }
     }
 

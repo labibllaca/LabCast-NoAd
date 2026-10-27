@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.labcast.podcast"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "1.3.2"
+    versionCode = 17
+    versionName = "1.3.4"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

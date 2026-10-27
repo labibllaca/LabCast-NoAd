@@ -21,7 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
-import com.example.data.getEffectiveTimestamp
+import com.example.data.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -38,6 +38,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -477,6 +478,10 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
     val podcasts by viewModel.podcasts.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val selectedPodcast by viewModel.selectedPodcast.collectAsStateWithLifecycle()
+    val selectedProducer by viewModel.selectedProducer.collectAsStateWithLifecycle()
+    val matchingProducers by viewModel.matchingProducers.collectAsStateWithLifecycle()
+    val matchingProducedEpisodes by viewModel.matchingProducedEpisodes.collectAsStateWithLifecycle()
+    val selectedSearchFilter by viewModel.selectedSearchFilter.collectAsStateWithLifecycle()
     val adsBlockedCount by viewModel.adsBlockedCount.collectAsStateWithLifecycle()
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
@@ -503,9 +508,18 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
     }
 
     var selectedCategory by remember { mutableStateOf("All") }
-    val categories = listOf("All", "Technology", "Science", "Wellness", "Mystery")
+    val defaultCategories = listOf("All", "Health & Fitness", "True Crime", "Education", "Philosophy", "Fiction", "Technology", "Science", "Wellness", "Mystery")
+    val categories = remember(podcasts) {
+        (listOf("All") + podcasts.map { it.category }.filter { it.isNotBlank() } + defaultCategories).distinct()
+    }
 
-    if (selectedPodcast != null) {
+    if (selectedProducer != null) {
+        ProducerDetailScreen(
+            producer = selectedProducer!!,
+            viewModel = viewModel,
+            onBack = { viewModel.selectProducer(null) }
+        )
+    } else if (selectedPodcast != null) {
         PodcastDetailScreen(
             podcast = selectedPodcast!!,
             viewModel = viewModel,
@@ -753,19 +767,64 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                     Column(
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "Search Results (${searchResults.size})",
-                            color = colors.textPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Source: ${selectedSearchSource.displayName}",
-                            color = CyberGreen,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Search Results",
+                                color = colors.textPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = selectedSearchSource.displayName,
+                                color = CyberGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Category Filter Tabs (All, Producers, Shows, Episodes)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(SearchFilterTab.values()) { filterTab ->
+                                val count = when (filterTab) {
+                                    SearchFilterTab.ALL -> searchResults.size + matchingProducers.size
+                                    SearchFilterTab.PRODUCERS -> matchingProducers.size
+                                    SearchFilterTab.SHOWS -> searchResults.size
+                                    SearchFilterTab.EPISODES -> matchingProducedEpisodes.size
+                                }
+                                val isSelected = selectedSearchFilter == filterTab
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            if (isSelected) CyberGreen else colors.inputBg,
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) CyberGreen else colors.itemBorder,
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .clickable { viewModel.selectSearchFilter(filterTab) }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        .testTag("tab_search_filter_${filterTab.name.lowercase()}")
+                                ) {
+                                    Text(
+                                        text = "${filterTab.label} ($count)",
+                                        color = if (isSelected) ObsidianBlack else colors.textMuted,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -792,7 +851,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                             }
                         }
                     }
-                } else if (searchResults.isEmpty()) {
+                } else if (searchResults.isEmpty() && matchingProducers.isEmpty() && matchingProducedEpisodes.isEmpty()) {
                     item {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
@@ -808,7 +867,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                                 Icon(Icons.Default.SearchOff, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(32.dp))
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    searchError ?: "No podcasts found for '$searchQuery' on ${selectedSearchSource.displayName}",
+                                    searchError ?: "No podcasts or producers found for '$searchQuery' on ${selectedSearchSource.displayName}",
                                     color = colors.textMuted,
                                     fontSize = 12.sp
                                 )
@@ -816,14 +875,102 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                         }
                     }
                 } else {
-                    items(searchResults) { result ->
-                        val isLocallySubscribed = podcasts.any { it.id == result.id && it.isSubscribed }
-                        SearchResultCard(
-                            result = result,
-                            isSubscribed = isLocallySubscribed,
-                            onSubscribeClick = { viewModel.subscribeToSearchResult(result) },
-                            onCardClick = { viewModel.subscribeToSearchResult(result) }
-                        )
+                    // 1. PRODUCERS & ARTISTS SECTION
+                    if ((selectedSearchFilter == SearchFilterTab.ALL || selectedSearchFilter == SearchFilterTab.PRODUCERS) && matchingProducers.isNotEmpty()) {
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.RecordVoiceOver,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Producers & Artists (${matchingProducers.size})",
+                                    color = colors.textPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                        items(matchingProducers) { producer ->
+                            ProducerSearchCard(
+                                producer = producer,
+                                onClick = { viewModel.selectProducer(producer) }
+                            )
+                        }
+                    }
+
+                    // 2. PODCAST SHOWS SECTION
+                    if ((selectedSearchFilter == SearchFilterTab.ALL || selectedSearchFilter == SearchFilterTab.SHOWS) && searchResults.isNotEmpty()) {
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Podcasts,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Podcast Shows (${searchResults.size})",
+                                    color = colors.textPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                        items(searchResults) { result ->
+                            val isLocallySubscribed = podcasts.any { it.id == result.id && it.isSubscribed }
+                            SearchResultCard(
+                                result = result,
+                                isSubscribed = isLocallySubscribed,
+                                onSubscribeClick = { viewModel.subscribeToSearchResult(result) },
+                                onCardClick = { viewModel.subscribeToSearchResult(result) },
+                                onProducerClick = { viewModel.selectProducerFromSearchResult(result) }
+                            )
+                        }
+                    }
+
+                    // 3. MATCHING PRODUCED EPISODES SECTION
+                    if ((selectedSearchFilter == SearchFilterTab.ALL || selectedSearchFilter == SearchFilterTab.EPISODES) && matchingProducedEpisodes.isNotEmpty()) {
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Produced Episodes (${matchingProducedEpisodes.size})",
+                                    color = colors.textPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                        items(matchingProducedEpisodes) { ep ->
+                            ProducerEpisodeListItem(
+                                episode = ep,
+                                producerName = ep.podcastTitle,
+                                isPlaying = false,
+                                onPlayClick = { viewModel.playEpisode(ep) },
+                                onDownloadClick = { viewModel.downloadEpisode(ep) },
+                                onQueueNextClick = { viewModel.addEpisodeToQueueNext(ep) }
+                            )
+                        }
                     }
                 }
             }
@@ -928,6 +1075,61 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                                     color = TextGray,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Featured Producers & Artists Shelf
+            if (matchingProducers.isNotEmpty() && searchQuery.isBlank()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(colors.cardBackground, RoundedCornerShape(14.dp))
+                            .border(1.dp, colors.itemBorder, RoundedCornerShape(14.dp))
+                            .padding(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.RecordVoiceOver,
+                                    contentDescription = null,
+                                    tint = CyberGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Featured Producers & Artists",
+                                    color = colors.textPrimary,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = "${matchingProducers.size} Creators",
+                                color = CyberGreen,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(matchingProducers.take(12)) { producer ->
+                                FeaturedProducerChip(
+                                    producer = producer,
+                                    onClick = { viewModel.selectProducer(producer) }
                                 )
                             }
                         }
@@ -1314,12 +1516,38 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
                         fontWeight = FontWeight.Black,
                         fontSize = 20.sp
                     )
-                    Text(
-                        text = "by ${podcast.author}",
-                        color = TextGray,
-                        fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp
-                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { viewModel.selectProducerByName(podcast.author, podcast.coverUrl) }
+                            .background(CyberGreen.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .testTag("btn_detail_producer_${podcast.id}")
+                    ) {
+                        Icon(
+                            Icons.Default.RecordVoiceOver,
+                            contentDescription = "Producer",
+                            tint = CyberGreen,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Producer: ${podcast.author}",
+                            color = CyberGreen,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = CyberGreen,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
 
                     Row(
@@ -2720,7 +2948,8 @@ fun SearchResultCard(
     result: SearchResultPodcast,
     isSubscribed: Boolean,
     onSubscribeClick: () -> Unit,
-    onCardClick: () -> Unit
+    onCardClick: () -> Unit,
+    onProducerClick: (() -> Unit)? = null
 ) {
     val colors = LocalCustomColors.current
     Card(
@@ -2787,14 +3016,43 @@ fun SearchResultCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "by ${result.author}",
-                    color = colors.textMuted,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Interactive Producer / Artist Pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable(enabled = onProducerClick != null) { onProducerClick?.invoke() }
+                        .background(CyberGreen.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .testTag("producer_pill_${result.id}")
+                ) {
+                    Icon(
+                        Icons.Default.RecordVoiceOver,
+                        contentDescription = "Producer",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Producer: ${result.author}",
+                        color = CyberGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = CyberGreen,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+
                 if (result.trackCount > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${result.trackCount} episodes",
                         color = colors.textMuted,
@@ -3266,23 +3524,51 @@ fun FullPlayerScreen(
             .navigationBarsPadding()
             .testTag("full_player_screen")
     ) {
-        // Aesthetic Gradient Background Aura
+        // Blurred Main Color Particles & Ambient Glow Aura
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(300.dp)
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            if (colors.isDark) {
-                                if (isAdActive) AdGold.copy(alpha = 0.12f) else CyberGreen.copy(alpha = 0.12f)
-                            } else {
-                                if (isAdActive) AdGold.copy(alpha = 0.16f) else LightPrimary.copy(alpha = 0.10f)
-                            },
-                            Color.Transparent
-                        )
+                .fillMaxSize()
+                .blur(90.dp)
+        ) {
+            // Top-Left Primary Color Particle Blob
+            Box(
+                modifier = Modifier
+                    .offset(x = (-40).dp, y = (-20).dp)
+                    .size(280.dp)
+                    .background(
+                        if (isAdActive) AdGold.copy(alpha = 0.35f) else CyberGreen.copy(alpha = 0.28f),
+                        CircleShape
                     )
-                )
+            )
+            // Center-Right Secondary Vibrant Color Particle Blob (Purple/Indigo)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = 60.dp, y = 40.dp)
+                    .size(320.dp)
+                    .background(
+                        Color(0xFF8B5CF6).copy(alpha = 0.22f),
+                        CircleShape
+                    )
+            )
+            // Bottom-Left Cyan Ambient Particle Blob
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .offset(x = (-30).dp, y = 80.dp)
+                    .size(260.dp)
+                    .background(
+                        Color(0xFF06B6D4).copy(alpha = 0.20f),
+                        CircleShape
+                    )
+            )
+        }
+
+        // Translucent overlay for readability
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (colors.isDark) ObsidianBlack.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.5f))
         )
 
         Column(
