@@ -15,6 +15,7 @@ import com.example.player.AcousticAdSegment
 import com.example.player.PodcastKeywordSpotter
 import com.example.player.AdSkipInterval
 import com.example.player.IntroMusicInterval
+import com.example.player.VozTranscriber
 import com.example.service.PodcastMediaService
 import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
@@ -1443,11 +1444,33 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val detectedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
                     ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
 
+                // 3b. On-Device Voz Tiny LLM STT Analysis (Concurrent Background Analysis while Playing)
+                val vozTranscriber = VozTranscriber()
+                val vozResult = vozTranscriber.transcribeAudioAndDetectSkips(currentEp)
+                val vozSkipIntervals = vozResult.skipRanges.map { skip ->
+                    AdSkipInterval(
+                        id = skip.id,
+                        startMs = skip.startMs,
+                        endMs = skip.endMs,
+                        triggerWord = "Voz: ${skip.label}",
+                        resumeWord = "Hauptteil",
+                        confidence = skip.confidence,
+                        source = "Voz Tiny Offline STT"
+                    )
+                }
+                val combinedAdIntervals = (transcriptAds + vozSkipIntervals).distinctBy { it.id }
+
                 withContext(Dispatchers.Main) {
                     _waveformAmplitudes.value = waveform
                     _acousticAdSegments.value = detectedAcousticAds
-                    _detectedTranscriptAds.value = transcriptAds
+                    _detectedTranscriptAds.value = combinedAdIntervals
                     _detectedIntroMusic.value = detectedIntro
+
+                    val adCount = combinedAdIntervals.size
+                    val consoleLine = "[VOZ CONSOLE] Stream playback active. Background audio analysis completed for '${currentEp.title}' ($adCount sponsor/ad segments identified)."
+                    Log.i("PodcastPlayer", consoleLine)
+                    System.out.println(consoleLine)
+                    repository.addSyncLog("Voz AI Engine", "Echtzeit-Hintergrundanalyse abgeschlossen: $adCount Werbesegmente für '${currentEp.title}' identifiziert.")
                 }
 
                 // 4. Save updated metadata to database
