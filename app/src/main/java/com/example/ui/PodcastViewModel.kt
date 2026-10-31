@@ -9,6 +9,9 @@ import com.example.asr.AdCueDetector
 import com.example.asr.AdScanController
 import com.example.asr.AdSlotLearner
 import com.example.asr.AdSlotPredictor
+import com.example.asr.AsrModelRegistry
+import com.example.asr.AsrModelState
+import com.example.asr.AsrPreferences
 import com.example.asr.LazySpeechRecognizerEngine
 import com.example.asr.MediaPcmSourceFactory
 import com.example.asr.ModelDownloadManager
@@ -47,6 +50,9 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _asrEnabled = MutableStateFlow(false)
     val asrEnabled: StateFlow<Boolean> = _asrEnabled.asStateFlow()
     private val _asrModelReady = MutableStateFlow(false)
+    private val _asrModelState = MutableStateFlow<AsrModelState>(AsrModelState.Disabled)
+    val asrModelState: StateFlow<AsrModelState> = _asrModelState.asStateFlow()
+    private val asrPreferences = AsrPreferences(application)
     private val modelDownloadManager = ModelDownloadManager(getApplication())
     private val adScanStore = RoomAdScanStore(database.adDao())
     private val adScanController = AdScanController(
@@ -838,6 +844,14 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch {
             adScanController.currentAds.collect { _currentAdSegments.value = it }
+        }
+
+        _asrEnabled.value = asrPreferences.enabled
+        _asrModelReady.value = asrPreferences.isModelInstalled()
+        _asrModelState.value = when {
+            !_asrEnabled.value -> AsrModelState.Disabled
+            _asrModelReady.value -> AsrModelState.Ready
+            else -> AsrModelState.NotDownloaded
         }
 
         PodcastPlayerHub.onHeadsetDisconnected = {
@@ -1668,6 +1682,62 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.addSyncLog("Ad-Skipper Engine", "User switched Ad-Skipper ${if (next) "ON (on-device English detection)" else "OFF"}")
         }
+    }
+
+    // On-device ASR settings
+    fun setAsrEnabled(enabled: Boolean) {
+        _asrEnabled.value = enabled
+        asrPreferences.enabled = enabled
+        if (!enabled) {
+            adScanController.stop()
+            _asrModelState.value = AsrModelState.Disabled
+            return
+        }
+        _asrModelState.value = if (_asrModelReady.value) {
+            AsrModelState.Ready
+        } else {
+            AsrModelState.NotDownloaded
+        }
+        val episode = _currentPlayingEpisode.value
+        if (episode != null && _asrModelReady.value) {
+            adScanController.start(episode, _playbackPositionMs.value)
+        }
+    }
+
+    fun downloadAsrModel() {
+        viewModelScope.launch {
+            _asrModelState.value = AsrModelState.Downloading(0f)
+            val result = modelDownloadManager.download { progress ->
+                _asrModelState.value = AsrModelState.Downloading(progress)
+            }
+            result.onSuccess {
+                _asrModelReady.value = true
+                _asrEnabled.value = true
+                asrPreferences.enabled = true
+                asrPreferences.modelVersion = AsrModelRegistry.modelDirName
+                _asrModelState.value = AsrModelState.Ready
+                _currentPlayingEpisode.value?.let { episode ->
+                    adScanController.start(episode, _playbackPositionMs.value)
+                }
+            }.onFailure { error ->
+                _asrModelReady.value = false
+                _asrModelState.value = AsrModelState.Failed(error.message ?: "Download failed")
+            }
+        }
+    }
+
+    fun deleteAsrModel() {
+        adScanController.stop()
+        modelDownloadManager.delete()
+        _asrModelReady.value = false
+        _asrEnabled.value = false
+        asrPreferences.enabled = false
+        asrPreferences.modelVersion = null
+        _asrModelState.value = AsrModelState.NotDownloaded
+    }
+
+    fun relearnShow(podcastId: String) {
+        adScanController.relearnShow(podcastId)
     }
 
     // Trigger Ad Skip Manually
