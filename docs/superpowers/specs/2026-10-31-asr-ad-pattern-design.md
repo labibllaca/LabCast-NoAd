@@ -51,8 +51,7 @@ trustworthy skip that does not require full transcription of every episode.
 - A background service that keeps the CPU busy after playback stops.
 - Hiding uncertainty: the UI must distinguish learned, confirmed, missed,
   and disabled slots.
-- Shipping a model inside the APK without the user's consent, or silently
-  downloading tens of MB on mobile data.
+- Shipping a model inside the APK without the user's consent.
 
 ## Constraints
 
@@ -141,11 +140,10 @@ re-learn. This is a safety valve for shows whose ad layout changes.
   updated only when the decoded value differs by more than 5 s and is > 0, so
   progress and slot ratios agree. If no decoded duration exists yet, the feed
   duration is used and prediction windows get an extra ±60 s of padding.
-- **Mobile data:** scanning a non-downloaded episode duplicates bytes that
-  `MediaPlayer` is already streaming. Default policy is to scan only
-  downloaded episodes, or stream-scan only on Wi-Fi. On mobile data with no
-  local file, the engine uses real-time tap mode (no duplicate reads) or
-  waits; this is a setting, defaulting to "Wi-Fi only".
+- **Network:** scanning may use Wi-Fi or mobile data; there is no Wi-Fi gate.
+  Scanning a non-downloaded episode fetches bytes separately from
+  `MediaPlayer`, roughly doubling data for the scanned regions. This is
+  accepted by the owner; the look-ahead cap keeps it bounded.
 
 ### 3. Transcript
 
@@ -282,7 +280,7 @@ it cannot masquerade as evidence.
 - Player: real ad markers on the progress bar; a scan indicator (idle,
   scanning, learned).
 - Settings: "On-device ad detection (English)" toggle; model status/download;
-  "only on Wi-Fi"; battery threshold; delete model; license text.
+  battery threshold; delete model; license text.
 - First enable shows the model size (~30–50 MB) and requires confirmation.
 - Remove all "Voz AI" / "AI Engine" claims and fabricated counters; keep only
   real, measured values.
@@ -374,7 +372,9 @@ it cannot masquerade as evidence.
 - Look-ahead 180 s; window padding 30 s before / 60 s after; max ad 180 s.
 - Slot confidence threshold 0.5; disable after 3 consecutive misses; re-learn
   after 2 fully missed episodes.
-- Model downloaded on first enable; nothing bundled; Wi-Fi-only by default.
+- Model downloaded on first enable; nothing bundled. No Wi-Fi gating: the
+  owner has mobile traffic covered, so scanning and model download may use
+  either connection.
 - Slots store ratio + absolute anchor + variance, not a single timestamp.
 - Delete `VozTranscriber`, `VozModelManager`, and the synthetic parts of
   `AudioWaveAdDetector` rather than leaving them as a fallback.
@@ -393,8 +393,9 @@ it cannot masquerade as evidence.
   end cue arrives rather than seeking to the ad start.
 - Bootstrap scans the whole episode eventually, starting with
   `0..playhead+180 s`; incomplete scans resume as `PARTIAL`.
-- Mobile-data scanning: downloaded files, or Wi-Fi only by default; otherwise
-  real-time tap mode.
+- Network: scanning is allowed on Wi-Fi and mobile data without gating;
+  duplicate range reads are accepted. Real-time tap remains only the
+  no-Range fallback.
 
 ## Left to the builder
 
