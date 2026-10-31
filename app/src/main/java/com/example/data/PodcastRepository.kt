@@ -318,7 +318,13 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         )
 
         podcastDao.insertPodcasts(defaultPodcasts)
-        podcastDao.insertEpisodes(defaultEpisodes)
+        // Seed demo episodes without fabricated transcripts, chapters, or ad
+        // timestamps; real evidence comes from the feed or on-device ASR.
+        podcastDao.insertEpisodes(
+            defaultEpisodes.map {
+                it.copy(transcript = "", chapters = "", adTimestampsSeconds = "")
+            }
+        )
 
         // Clean up legacy dummy URLs if present and heal existing data
         healExistingDataIfNeeded()

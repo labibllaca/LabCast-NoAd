@@ -14,6 +14,6 @@ interface PcmReader : Closeable {
     fun read(out: FloatArray): Int
 }
 
-interface PcmSourceFactory {
+fun interface PcmSourceFactory {
     fun create(episode: EpisodeEntity): PcmSource
 }

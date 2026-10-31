@@ -365,8 +365,8 @@ object PodcastApiClient {
                     return EnrichedEpisodeMetadata(
                         description = richDesc,
                         chapters = chaptersStr,
-                        adTimestampsSeconds = "45,${durationSeconds / 2}",
-                        transcript = transcriptStr,
+                        adTimestampsSeconds = "",
+                        transcript = "",
                         durationSeconds = durationSeconds,
                         episodeArtworkUrl = epArtwork
                     )
@@ -429,23 +429,7 @@ object PodcastApiClient {
                 val chaptersPipeString = if (parsedChapters.isNotEmpty()) {
                     com.example.data.ChapterParser.toPipeString(parsedChapters)
                 } else {
-                    val sponsorTime = (durationSec * 0.15).toLong().coerceAtLeast(60L)
-                    val mainTime = (durationSec * 0.25).toLong().coerceAtLeast(180L)
-                    val deepTime = (durationSec * 0.65).toLong().coerceAtLeast(360L)
-                    val wrapTime = (durationSec * 0.90).toLong().coerceAtLeast(480L)
-                    "0:Introduction & Overview|$sponsorTime:Sponsor: Featured Partner|$mainTime:Discussion & Main Topic|$deepTime:In-Depth Analysis & Commentary|$wrapTime:Wrap-up & Key Points"
-                }
-
-                // Generate timestamped transcript with identified sponsor strings
-                val generatedTranscriptSegments = com.example.data.TranscriptParser.parseOrGenerateTranscript(
-                    rawTranscript = null,
-                    episodeTitle = cleanTitle,
-                    episodeDescription = cleanDesc,
-                    durationSeconds = durationSec,
-                    chapters = parsedChapters
-                )
-                val transcriptFormatted = generatedTranscriptSegments.joinToString("\n") { seg ->
-                    "${seg.formattedTime()} [${seg.speaker}] ${seg.text}"
+                    ""
                 }
 
                 list.add(
@@ -456,9 +440,9 @@ object PodcastApiClient {
                         durationSeconds = durationSec,
                         publishDate = cleanPubDate,
                         audioUrl = audioUrl,
-                        adTimestampsSeconds = "45,${durationSec / 2}",
+                        adTimestampsSeconds = "",
                         chapters = chaptersPipeString,
-                        transcript = transcriptFormatted,
+                        transcript = "",
                         publishTimestamp = timestampMs,
                         episodeArtworkUrl = epImage
                     )
@@ -702,16 +686,6 @@ object CuratedPodcastCatalog {
                 else -> "0:Prologue|120:Part 1: Foundational Paradigms|480:Part 2: Real-World Applications|${duration - 360}:Interactive Roundtable|${duration - 90}:Conclusion"
             }
 
-            val transcriptSegs = com.example.data.TranscriptParser.parseOrGenerateTranscript(
-                rawTranscript = null,
-                episodeTitle = epTitle,
-                episodeDescription = epDesc,
-                durationSeconds = duration
-            )
-            val transcriptStr = transcriptSegs.joinToString("\n") { seg ->
-                "${seg.formattedTime()} [${seg.speaker}] ${seg.text}"
-            }
-
             val dateStr = "2026-09-0${(7 - i).coerceAtLeast(1)}"
             val ts = com.example.util.PodcastDateUtils.parseDateToTimestamp(dateStr)
             FeedEpisode(
@@ -721,9 +695,9 @@ object CuratedPodcastCatalog {
                 durationSeconds = duration,
                 publishDate = dateStr,
                 audioUrl = audio,
-                adTimestampsSeconds = "30,${duration / 2}",
+                adTimestampsSeconds = "",
                 chapters = chs,
-                transcript = transcriptStr,
+                transcript = "",
                 publishTimestamp = ts
             )
         }.sortedByDescending { it.publishTimestamp }

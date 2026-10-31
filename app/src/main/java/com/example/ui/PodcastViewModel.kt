@@ -15,13 +15,14 @@ import com.example.asr.ModelDownloadManager
 import com.example.asr.ScanPlanner
 import com.example.asr.ScanState
 import com.example.asr.SherpaSpeechRecognizer
+import com.example.asr.ShowBootstrap
 import com.example.network.PodcastApiClient
 import com.example.network.CuratedPodcastCatalog
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
 import com.example.player.PodcastPlayerHub
-import com.example.player.AudioWaveAdDetector
-import com.example.player.PodcastKeywordSpotter
+import com.example.player.AudioWaveformVisualizer
+import com.example.player.IntroMusicDetector
 import com.example.player.IntroMusicInterval
 import com.example.player.AdSkipDecider
 import com.example.player.SkipDecision
@@ -40,8 +41,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val database = PodcastDatabase.getDatabase(application)
     private val repository = PodcastRepository(database.podcastDao())
-    private val audioWaveDetector = AudioWaveAdDetector()
-    private val keywordSpotter = PodcastKeywordSpotter()
+    private val waveformVisualizer = AudioWaveformVisualizer()
+    private val introMusicDetector = IntroMusicDetector()
 
     private val _asrEnabled = MutableStateFlow(false)
     val asrEnabled: StateFlow<Boolean> = _asrEnabled.asStateFlow()
@@ -61,6 +62,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         scope = viewModelScope,
         isEnabled = { _asrEnabled.value },
         isModelReady = { _asrModelReady.value },
+        bootstrap = { episode -> ShowBootstrap().candidates(episode) },
     )
     private val adSkipDecider = AdSkipDecider()
     val adScanState: StateFlow<ScanState> = adScanController.state
@@ -257,19 +259,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val _currentAudioEnergy = MutableStateFlow(0.45f)
     val currentAudioEnergy: StateFlow<Float> = _currentAudioEnergy.asStateFlow()
 
-    // Speech-To-Text (STT) Live Ad Keyword Scanner State
-    private val _isSttScanning = MutableStateFlow(false)
-    val isSttScanning: StateFlow<Boolean> = _isSttScanning.asStateFlow()
-
-    private val _sttLiveText = MutableStateFlow("")
-    val sttLiveText: StateFlow<String> = _sttLiveText.asStateFlow()
-
-    private val _sttMatchedKeywords = MutableStateFlow<List<String>>(emptyList())
-    val sttMatchedKeywords: StateFlow<List<String>> = _sttMatchedKeywords.asStateFlow()
-
-    private val _sttConfidenceScore = MutableStateFlow(0f)
-    val sttConfidenceScore: StateFlow<Float> = _sttConfidenceScore.asStateFlow()
-
     // Phase 2: Intro Music / Theme Jingle Skipper (e.g., Art of Manliness ~28s intro)
     private val _isIntroSkipEnabled = MutableStateFlow(true)
     val isIntroSkipEnabled: StateFlow<Boolean> = _isIntroSkipEnabled.asStateFlow()
@@ -316,44 +305,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             val selected = sampleErrors.random()
             repository.addErrorLog(selected.first, selected.second)
             _sponsorSkipEvent.value = "Test-Fehler protokolliert: ${selected.first}"
-        }
-    }
-
-    private val adKeywordDictionary = listOf(
-        "werbung", "werbepartner", "sponsor", "sponsorship", "sponsored by",
-        "brought to you by", "discount code", "promo code", "promocode", "special offer",
-        "commercial break", "ad break", "partner", "buy now", "link in description",
-        "ag1", "athletic greens", "betterhelp", "nordvpn", "expressvpn", "manscaped",
-        "square space", "babbel", "audible", "factor meals", "shopify"
-    )
-
-    fun toggleSttScanner() {
-        _isSttScanning.value = !_isSttScanning.value
-        if (_isSttScanning.value) {
-            _sponsorSkipEvent.value = "Speech-to-Text STT Scanner Aktiviert"
-            scanSpeechTextForAds("This episode is sponsored by AG1 and BetterHelp. Use promo code PODCAST for a special discount offer.")
-        } else {
-            _sttMatchedKeywords.value = emptyList()
-            _sttConfidenceScore.value = 0f
-            _sttLiveText.value = ""
-        }
-    }
-
-    fun scanSpeechTextForAds(customText: String) {
-        _sttLiveText.value = customText
-        val lowerText = customText.lowercase(java.util.Locale.ROOT)
-        val matched = adKeywordDictionary.filter { keyword ->
-            lowerText.contains(keyword)
-        }
-        _sttMatchedKeywords.value = matched
-        if (matched.isNotEmpty()) {
-            val score = (matched.size * 0.35f + 0.30f).coerceAtMost(0.98f)
-            _sttConfidenceScore.value = score
-            if (_isAutoAdSkipEnabled.value) {
-                _sponsorSkipEvent.value = "STT Ad Keyword erkannt: ${matched.joinToString(", ")}"
-            }
-        } else {
-            _sttConfidenceScore.value = 0.05f
         }
     }
 
@@ -1330,8 +1281,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             // Phase 2: Intro Music / Theme Jingle Skip (e.g. AoM / Art of Manliness ~28s)
             if (effectiveStartPos < 1500L && _isIntroSkipEnabled.value) {
-                val intro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
-                    ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
+                val intro = introMusicDetector.detect(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
                 if (intro != null && intro.endMs > 0L) {
                     effectiveStartPos = intro.endMs
                     _detectedIntroMusic.value = intro
@@ -1375,7 +1325,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             startPlaybackJob()
 
             // Start real on-device transcription. Intro cues still come from real chapters/transcript.
-            val preParsedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
+            val preParsedIntro = introMusicDetector.detect(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
             if (preParsedIntro != null) {
                 _detectedIntroMusic.value = preParsedIntro
             }
@@ -1434,8 +1384,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                             description = newDesc,
                             chapters = newChaps,
                             transcript = newTranscript,
-                            podcastCoverUrl = artwork,
-                            adTimestampsSeconds = if (enriched.adTimestampsSeconds.isNotBlank()) enriched.adTimestampsSeconds else currentEp.adTimestampsSeconds
+                            podcastCoverUrl = artwork
                         )
                     }
                 }
@@ -1448,8 +1397,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 // 3. Cosmetic waveform only; real ad detection runs in AdScanController.
-                val waveform = audioWaveDetector.analyzeWaveform(currentEp.id, currentEp.durationSeconds).first
-                val detectedIntro = keywordSpotter.detectIntroMusic(
+                val waveform = waveformVisualizer.buildWaveform(currentEp.id, currentEp.durationSeconds)
+                val detectedIntro = introMusicDetector.detect(
                     currentEp.podcastTitle,
                     currentEp.transcript,
                     currentEp.chapters,
@@ -2170,7 +2119,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val current = _currentPlayingEpisode.value ?: return
 
         // Cosmetic level meter only; ad decisions come from confirmed ASR segments.
-        _currentAudioEnergy.value = audioWaveDetector.getInstantaneousEnergy(
+        _currentAudioEnergy.value = waveformVisualizer.getInstantaneousEnergy(
             positionMs = positionMs,
             waveform = _waveformAmplitudes.value,
             durationMs = current.durationSeconds * 1000L
