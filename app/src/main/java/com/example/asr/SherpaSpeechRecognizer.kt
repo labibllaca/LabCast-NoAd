@@ -44,7 +44,7 @@ class SherpaSpeechRecognizer(
         recognizer = OnlineRecognizer(assetManager = null, config = config)
     }
 
-    override fun startStream(): SpeechStream = SherpaStream(recognizer)
+    override fun startStream(startMs: Long): SpeechStream = SherpaStream(recognizer, startMs)
 
     override fun close() {
         recognizer.release()
@@ -52,11 +52,12 @@ class SherpaSpeechRecognizer(
 
     private class SherpaStream(
         private val recognizer: OnlineRecognizer,
+        private val initialStartMs: Long,
     ) : SpeechStream {
         private val stream: OnlineStream = recognizer.createStream()
         private val pending = mutableListOf<AsrSegment>()
         private var audioSamples = 0L
-        private var streamStartMs = 0L
+        private var streamStartMs = initialStartMs
         private var finished = false
         private var closed = false
 
@@ -101,7 +102,7 @@ class SherpaSpeechRecognizer(
                 }
                 emitCurrentIfAny()
                 recognizer.reset(stream)
-                streamStartMs = audioSamples * 1000L / SAMPLE_RATE
+                streamStartMs = initialStartMs + audioSamples * 1000L / SAMPLE_RATE
             }
         }
 

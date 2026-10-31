@@ -5,7 +5,8 @@ package com.example.asr
  * tested without native code.
  */
 interface SpeechRecognizerEngine {
-    fun startStream(): SpeechStream
+    /** Starts a stream whose timestamps are relative to [startMs] on the episode timeline. */
+    fun startStream(startMs: Long = 0L): SpeechStream
     fun close()
 }
 
