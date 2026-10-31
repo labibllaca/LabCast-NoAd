@@ -18,6 +18,7 @@ import com.example.asr.ModelDownloadManager
 import com.example.asr.ScanPlanner
 import com.example.asr.ScanState
 import com.example.asr.SherpaSpeechRecognizer
+import com.example.asr.SlotEditReducer
 import com.example.asr.ShowBootstrap
 import com.example.network.PodcastApiClient
 import com.example.network.CuratedPodcastCatalog
@@ -1738,6 +1739,47 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     fun relearnShow(podcastId: String) {
         adScanController.relearnShow(podcastId)
+        loadAdSlots(podcastId)
+    }
+
+    private val _adSlots = MutableStateFlow<List<AdSlotEntity>>(emptyList())
+    val adSlots: StateFlow<List<AdSlotEntity>> = _adSlots.asStateFlow()
+    private var adSlotsPodcastId: String? = null
+
+    fun loadAdSlots(podcastId: String) {
+        adSlotsPodcastId = podcastId
+        viewModelScope.launch {
+            _adSlots.value = adScanStore.slots(podcastId)
+        }
+    }
+
+    fun editAdSlot(
+        slot: AdSlotEntity,
+        startMs: Long,
+        durationMs: Long,
+        episodeDurationMs: Long,
+    ) {
+        updateAdSlot(SlotEditReducer.edit(slot, startMs, durationMs, episodeDurationMs))
+    }
+
+    fun toggleAdSlot(slot: AdSlotEntity) {
+        updateAdSlot(SlotEditReducer.toggle(slot))
+    }
+
+    fun deleteAdSlot(slot: AdSlotEntity) {
+        val podcastId = slot.podcastId
+        val updated = SlotEditReducer.delete(_adSlots.value, slot.slotIndex)
+        _adSlots.value = updated
+        viewModelScope.launch { adScanStore.saveSlots(podcastId, updated) }
+    }
+
+    private fun updateAdSlot(slot: AdSlotEntity) {
+        val updated = _adSlots.value
+            .map { if (it.slotIndex == slot.slotIndex) slot else it }
+            .sortedBy { it.startMsAnchor }
+            .mapIndexed { index, item -> item.copy(slotIndex = index) }
+        _adSlots.value = updated
+        viewModelScope.launch { adScanStore.saveSlots(slot.podcastId, updated) }
     }
 
     // Trigger Ad Skip Manually

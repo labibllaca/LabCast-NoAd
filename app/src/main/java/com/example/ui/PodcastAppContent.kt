@@ -1362,12 +1362,18 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
     val selectedEpisodeIds by viewModel.selectedEpisodeIds.collectAsStateWithLifecycle()
     val isBatchDownloading by viewModel.isBatchDownloading.collectAsStateWithLifecycle()
     val isRefreshingEpisodes by viewModel.isRefreshingEpisodes.collectAsStateWithLifecycle()
+    val adSlots by viewModel.adSlots.collectAsStateWithLifecycle()
 
     var episodeSearchQuery by remember { mutableStateOf("") }
     var sortOrder by remember { mutableStateOf(EpisodeSortOrder.NEWEST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
     val podcastEpisodes = episodes.filter { it.podcastId == podcast.id }
+    val maxSlotDurationMs = (podcastEpisodes.maxOfOrNull { it.durationSeconds } ?: 3600L) * 1000L
+
+    LaunchedEffect(podcast.id) {
+        viewModel.loadAdSlots(podcast.id)
+    }
 
     val filteredEpisodes = podcastEpisodes
         .filter { ep ->
@@ -1612,6 +1618,20 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
             )
             Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
+        }
+
+        // Learned ad slots for this show
+        item {
+            AdSlotsSection(
+                slots = adSlots,
+                episodeDurationMs = maxSlotDurationMs,
+                onEdit = { slot, startMs, durationMs ->
+                    viewModel.editAdSlot(slot, startMs, durationMs, maxSlotDurationMs)
+                },
+                onToggle = { viewModel.toggleAdSlot(it) },
+                onDelete = { viewModel.deleteAdSlot(it) },
+                onRelearn = { viewModel.relearnShow(podcast.id) },
+            )
         }
 
         // Podcast-Specific Episode Search & Sort Controls
