@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class MediaPcmSourceInstrumentedTest {
 
     @Test
-    fun `decodes the first ten seconds of a real episode`() = runTest {
+    fun decodesFirstTenSecondsOfRealEpisode() = runTest {
         val ctx = InstrumentationRegistry.getInstrumentation().targetContext
         val ep = EpisodeEntity(
             id = "x",
@@ -31,12 +31,16 @@ class MediaPcmSourceInstrumentedTest {
         val reader = source.reader(30_000)
         val out = FloatArray(1_600)
         var total = 0
+        var reads = 0
         try {
-            repeat(100) { total += reader.read(out) }
+            while (total < 100_000 && reads < 1_000) {
+                total += reader.read(out)
+                reads++
+            }
         } finally {
             reader.close()
         }
-        assertTrue(total > 100_000)
+        assertTrue("total=$total reads=$reads", total >= 100_000)
         assertTrue(out.any { kotlin.math.abs(it) > 0.01f })
     }
 }

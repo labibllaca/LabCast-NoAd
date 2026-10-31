@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class SherpaRecognizerInstrumentedTest {
 
     @Test
-    fun `transcribes the sample wav with timestamps`() = runBlocking {
+    fun transcribesSampleWavWithTimestamps() = runBlocking {
         val target = InstrumentationRegistry.getInstrumentation().targetContext
         val testContext = InstrumentationRegistry.getInstrumentation().context
         val models = ModelDownloadManager(target, OkHttpClient()).download {}.getOrThrow()
