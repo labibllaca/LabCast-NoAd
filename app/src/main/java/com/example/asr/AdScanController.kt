@@ -106,6 +106,7 @@ class AdScanController(
             aheadOfPlayheadMs = 0,
             adsFound = 0,
         )
+        _currentAds.value = emptyList()
         job = scope.launch(dispatcher) { runScan(episode) }
     }
 
@@ -141,12 +142,14 @@ class AdScanController(
     }
 
     fun relearnShow(podcastId: String) {
-        slots = slotLearner.invalidateAll(slots)
-        scope.launch(dispatcher) { store.saveSlots(podcastId, slots) }
-        forceFull = true
-        val ep = currentEpisode
-        if (ep != null && ep.podcastId == podcastId) {
-            start(ep, playheadMs)
+        scope.launch(dispatcher) {
+            val existing = store.slots(podcastId)
+            store.saveSlots(podcastId, slotLearner.invalidateAll(existing))
+            val ep = currentEpisode
+            if (ep != null && ep.podcastId == podcastId) {
+                forceFull = true
+                start(ep, playheadMs)
+            }
         }
     }
 
@@ -238,6 +241,7 @@ class AdScanController(
                 adsFound = ads.size,
             )
             saveScan(episode, ScanStatus.SCANNING)
+            logger("run planned mode=$mode durationMs=$durationMs slots=${slots.size} ranges=${merged.size} covered=${covered.size}")
 
             merged.forEach { range ->
                 if (!active) return@forEach
@@ -262,7 +266,8 @@ class AdScanController(
             throw c
         } catch (e: Exception) {
             _state.value = _state.value.copy(status = ScanStatus.FAILED, error = e.message)
-            logger("scan failed episode=${episode.id}: ${e.message}")
+            logger("scan failed episode=${episode.id}: ${e::class.java.simpleName}: ${e.message}")
+            android.util.Log.e("AdScan", "scan failed", e)
         }
     }
 

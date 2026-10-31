@@ -854,6 +854,18 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             _asrModelReady.value -> AsrModelState.Ready
             else -> AsrModelState.NotDownloaded
         }
+        if (!_asrModelReady.value) {
+            viewModelScope.launch(Dispatchers.IO) {
+                val installed = modelDownloadManager.isInstalled()
+                if (installed) {
+                    withContext(Dispatchers.Main) {
+                        _asrModelReady.value = true
+                        asrPreferences.modelVersion = AsrModelRegistry.modelDirName
+                        if (_asrEnabled.value) _asrModelState.value = AsrModelState.Ready
+                    }
+                }
+            }
+        }
 
         PodcastPlayerHub.onHeadsetDisconnected = {
             _isPlaying.value = false
