@@ -3497,9 +3497,8 @@ fun FullPlayerScreen(
     val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
     val transcriptSegments by viewModel.transcriptSegments.collectAsStateWithLifecycle()
     val waveformAmplitudes by viewModel.waveformAmplitudes.collectAsStateWithLifecycle()
-    val acousticAdSegments by viewModel.acousticAdSegments.collectAsStateWithLifecycle()
+    val currentAdSegments by viewModel.currentAdSegments.collectAsStateWithLifecycle()
     val currentAudioEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
-    val lastAcousticAdAlert by viewModel.lastAcousticAdAlert.collectAsStateWithLifecycle()
     val adsBlockedCount by viewModel.adsBlockedCount.collectAsStateWithLifecycle()
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
 
@@ -3958,14 +3957,14 @@ fun FullPlayerScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Acoustic Waveform Analysis",
+                                        text = "Live Audio Monitor",
                                         color = colors.textMuted,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Text(
-                                    text = if (isAdActive) "⚡ AD WAVE SPIKE DETECTED" else "RMS Level: ${(currentAudioEnergy * 100).toInt()}%",
+                                    text = if (isAdActive) "AD SEGMENT CONFIRMED" else "Level: ${(currentAudioEnergy * 100).toInt()}%",
                                     color = if (isAdActive) adAccent else primaryAccentGlow,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black
@@ -3995,7 +3994,7 @@ fun FullPlayerScreen(
 
                                     waveformAmplitudes.forEachIndexed { index, amp ->
                                         val barSec = (index.toFloat() / totalBars) * (episode!!.durationSeconds)
-                                        val isAcousticAd = acousticAdSegments.any { barSec >= (it.startMs / 1000) && barSec <= (it.endMs / 1000) }
+                                        val isAcousticAd = currentAdSegments.any { barSec >= (it.startMs / 1000) && barSec <= (it.endMs / 1000) }
                                         val isPast = index <= currentBarIndex
 
                                         val barColor = when {
