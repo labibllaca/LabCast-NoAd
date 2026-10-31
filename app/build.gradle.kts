@@ -20,6 +20,8 @@ android {
     versionCode = 22
     versionName = "1.3.9"
 
+    ndk { abiFilters += "arm64-v8a" }
+
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
@@ -127,11 +129,12 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
-  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.0")
+  implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx:v2.0.1")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)
   testImplementation(libs.junit)
+  testImplementation(libs.mockwebserver)
   testImplementation(libs.kotlinx.coroutines.test)
   testImplementation(libs.robolectric)
   testImplementation(libs.roborazzi)
