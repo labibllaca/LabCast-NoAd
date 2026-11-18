@@ -1,6 +1,7 @@
 package com.example.asr
 
 import com.example.data.AdSlotEntity
+import com.example.data.EpisodeAdSegmentEntity
 import com.example.data.EpisodeEntity
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -28,6 +29,7 @@ class AdScanControllerTest {
         store: FakeStore,
         source: FakePcmSource,
         engine: FakeEngine,
+        isEnabled: () -> Boolean = { true },
         bootstrap: (EpisodeEntity) -> List<DetectedAd> = { emptyList() },
     ): AdScanController {
         val dispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler)
@@ -42,9 +44,68 @@ class AdScanControllerTest {
             scope = this,
             throttle = {},
             dispatcher = dispatcher,
+            isEnabled = isEnabled,
             bootstrap = bootstrap,
             logger = {},
         )
+    }
+
+    private fun userAd(startMs: Long, endMs: Long, createdAt: Long = 1) = EpisodeAdSegmentEntity(
+        id = "e:$startMs:$endMs",
+        episodeId = "e",
+        podcastId = "p",
+        startMs = startMs,
+        endMs = endMs,
+        label = "Manual mark",
+        confidence = 1f,
+        source = "USER",
+        confirmed = true,
+        createdAt = createdAt,
+    )
+
+    private fun asrAd(startMs: Long, endMs: Long) = EpisodeAdSegmentEntity(
+        id = "e:$startMs:$endMs",
+        episodeId = "e",
+        podcastId = "p",
+        startMs = startMs,
+        endMs = endMs,
+        label = "AG1",
+        confidence = 0.9f,
+        source = "ASR",
+        confirmed = true,
+        createdAt = 1,
+    )
+
+    @Test
+    fun `a rescan never replaces a user mark`() = runTest {
+        val controller = controller(FakeStore(), FakePcmSource(durationMs = 600_000), FakeEngine(emptyMap()))
+        val merged = controller.mergeAds(
+            existing = listOf(userAd(10_000, 70_000)),
+            detected = listOf(asrAd(20_000, 60_000)),
+        )
+        assertEquals(listOf("USER"), merged.map { it.source })
+        assertEquals(10_000L, merged.single().startMs)
+    }
+
+    @Test
+    fun `overlapping user marks keep the newer one`() = runTest {
+        val controller = controller(FakeStore(), FakePcmSource(durationMs = 600_000), FakeEngine(emptyMap()))
+        val older = userAd(0, 60_000, createdAt = 1)
+        val newer = userAd(30_000, 90_000, createdAt = 2)
+        val merged = controller.mergeAds(existing = listOf(older, newer), detected = emptyList())
+        assertEquals(listOf(newer.id), merged.map { it.id })
+    }
+
+    @Test
+    fun `start clears ads before the disabled early return`() = runTest {
+        val controller = controller(
+            FakeStore(),
+            FakePcmSource(durationMs = 600_000),
+            FakeEngine(emptyMap()),
+            isEnabled = { false },
+        )
+        controller.start(episode(), 0)
+        assertTrue(controller.currentAds.value.isEmpty())
     }
 
     private fun learnedSlotsForLongEpisode() = listOf(

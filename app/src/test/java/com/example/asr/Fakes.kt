@@ -45,6 +45,17 @@ class FakeStore : AdScanStore {
     override suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity> =
         adsByEpisode[episodeId].orEmpty()
 
+    override suspend fun upsertAdSegments(segments: List<EpisodeAdSegmentEntity>) {
+        if (segments.isEmpty()) return
+        val episodeId = segments.first().episodeId
+        val target = adsByEpisode[episodeId].orEmpty().toMutableList()
+        segments.forEach { incoming ->
+            val index = target.indexOfFirst { it.id == incoming.id }
+            if (index >= 0) target[index] = incoming else target += incoming
+        }
+        adsByEpisode[episodeId] = target.sortedBy { it.startMs }
+    }
+
     override suspend fun adSegment(id: String): EpisodeAdSegmentEntity? =
         adsByEpisode.values.flatten().firstOrNull { it.id == id }
 

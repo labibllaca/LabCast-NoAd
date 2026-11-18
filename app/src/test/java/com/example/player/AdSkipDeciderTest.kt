@@ -38,4 +38,10 @@ class AdSkipDeciderTest {
     fun `near the end does nothing to avoid a loop`() {
         assertEquals(SkipDecision.None, AdSkipDecider().decide(69_500, listOf(ad), true))
     }
+
+    @Test
+    fun `a confirmed user mark skips`() {
+        val user = ad.copy(source = "USER", confirmed = true)
+        assertEquals(SkipDecision.Skip(user), AdSkipDecider().decide(20_000, listOf(user), true))
+    }
 }

@@ -83,6 +83,10 @@ class AdScanController(
     private var pcmSource: PcmSource? = null
 
     fun start(episode: EpisodeEntity, playheadMs: Long) {
+        // Clear first: a disabled scan must never leave another episode's ads active.
+        ads = emptyList()
+        _currentAds.value = emptyList()
+
         if (!isEnabled() || !isModelReady()) {
             _state.value = ScanState(
                 episode.id, mode, ScanStatus.IDLE, 0, 0, 0, 0,
@@ -355,23 +359,48 @@ class AdScanController(
                 createdAt = System.currentTimeMillis(),
             )
         }
-        ads = mergeAds(ads, detected)
+        ads = mergeAds(
+            existing = protectedAds(episode) + ads.filterNot { it.source == AdSource.USER.name },
+            detected = detected,
+        )
         _currentAds.value = ads
         store.replaceAdSegments(episode.id, ads)
     }
 
-    private fun mergeAds(
+    private suspend fun protectedAds(episode: EpisodeEntity): List<EpisodeAdSegmentEntity> =
+        (store.adSegments(episode.id) + ads)
+            .filter { it.source == AdSource.USER.name }
+            .distinctBy { it.id }
+
+    internal fun mergeAds(
         existing: List<EpisodeAdSegmentEntity>,
         detected: List<EpisodeAdSegmentEntity>,
     ): List<EpisodeAdSegmentEntity> {
         val merged = existing.toMutableList()
+        // Two manual marks that overlap are the same assertion made twice: newest wins.
+        val userIds = existing.filter { it.source == AdSource.USER.name }
+            .sortedByDescending { it.createdAt }
+            .fold(mutableListOf<EpisodeAdSegmentEntity>()) { kept, candidate ->
+                val overlaps = kept.any { it.startMs < candidate.endMs && candidate.startMs < it.endMs }
+                if (!overlaps) kept += candidate
+                kept
+            }
+            .map { it.id }
+            .toSet()
+        merged.removeAll { it.source == AdSource.USER.name && it.id !in userIds }
         detected.forEach { incoming ->
             val index = merged.indexOfFirst { it.startMs < incoming.endMs && incoming.startMs < it.endMs }
             if (index < 0) {
                 merged += incoming
             } else {
                 val current = merged[index]
+                val currentIsUser = current.source == AdSource.USER.name
+                val incomingIsUser = incoming.source == AdSource.USER.name
                 merged[index] = when {
+                    currentIsUser && !incomingIsUser -> current
+                    incomingIsUser && !currentIsUser -> incoming
+                    incomingIsUser && currentIsUser ->
+                        if (incoming.createdAt >= current.createdAt) incoming else current
                     incoming.confirmed && !current.confirmed -> incoming
                     current.confirmed && !incoming.confirmed -> current
                     incoming.confirmed && current.confirmed &&

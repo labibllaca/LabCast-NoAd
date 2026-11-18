@@ -6,14 +6,20 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.asr.AdCueDetector
-import com.example.asr.Hotwords
+import com.example.asr.AdMarkResult
+import com.example.asr.AdMarkState
 import com.example.asr.AdScanController
+import com.example.asr.AdSelection
 import com.example.asr.AdSlotLearner
 import com.example.asr.AdSlotPredictor
 import com.example.asr.AsrModelRegistry
 import com.example.asr.AsrModelState
+import com.example.asr.AdSource
 import com.example.asr.AsrPreferences
+import com.example.asr.DetectedAd
+import com.example.asr.Hotwords
 import com.example.asr.LazySpeechRecognizerEngine
+import com.example.asr.ManualAdMarker
 import com.example.asr.MediaPcmSourceFactory
 import com.example.asr.ModelDownloadManager
 import com.example.asr.ScanPlanner
@@ -82,6 +88,15 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     val adScanState: StateFlow<ScanState> = adScanController.state
     private val _currentAdSegments = MutableStateFlow<List<EpisodeAdSegmentEntity>>(emptyList())
     val currentAdSegments: StateFlow<List<EpisodeAdSegmentEntity>> = _currentAdSegments.asStateFlow()
+    // User marks are kept beside the controller's ads so they survive a disabled scan.
+    private val _storedAds = MutableStateFlow<List<EpisodeAdSegmentEntity>>(emptyList())
+
+    private val _adMarkState = MutableStateFlow(AdMarkState())
+    val adMarkState: StateFlow<AdMarkState> = _adMarkState.asStateFlow()
+    val manualMarkedAds: StateFlow<List<EpisodeAdSegmentEntity>> = _currentAdSegments
+        .map { list -> list.filter { it.source == AdSource.USER.name } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    private val manualAdSlotLearner = AdSlotLearner()
 
     // UI state flows
     val podcasts: StateFlow<List<PodcastEntity>> = repository.allPodcasts
@@ -852,7 +867,13 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     init {
         viewModelScope.launch(Dispatchers.IO) { modelDownloadManager.deleteLegacy() }
         viewModelScope.launch {
-            adScanController.currentAds.collect { _currentAdSegments.value = it }
+            combine(
+                adScanController.currentAds,
+                _storedAds,
+                _asrEnabled,
+            ) { detected, stored, asr ->
+                AdSelection.visible((stored + detected).distinctBy { it.id }, asr)
+            }.collect { _currentAdSegments.value = it }
         }
 
         _asrEnabled.value = asrPreferences.enabled
@@ -1300,6 +1321,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
             var currentEp = episode
             _currentPlayingEpisode.value = currentEp
+            _adMarkState.value = AdMarkState()
+            _storedAds.value = adScanStore.adSegments(currentEp.id)
 
             // Smart Context Rewind:
             // When resuming an episode after a pause of > 10 min or on cold start with significant progress (>15s),
@@ -1709,6 +1732,9 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun setAsrEnabled(enabled: Boolean) {
         _asrEnabled.value = enabled
         asrPreferences.enabled = enabled
+        _currentPlayingEpisode.value?.let { episode ->
+            viewModelScope.launch { _storedAds.value = adScanStore.adSegments(episode.id) }
+        }
         if (!enabled) {
             adScanController.stop()
             _asrModelState.value = AsrModelState.Disabled
@@ -1800,6 +1826,94 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             .mapIndexed { index, item -> item.copy(slotIndex = index) }
         _adSlots.value = updated
         viewModelScope.launch { adScanStore.saveSlots(slot.podcastId, updated) }
+    }
+
+    // Manual ad marking: press once at the start and once at the end.
+    // A mark is a user assertion, so it drives skipping with or without ASR.
+    fun markAdStart() {
+        _adMarkState.value = ManualAdMarker.arm(_playbackPositionMs.value)
+    }
+
+    fun cancelAdMark() {
+        _adMarkState.value = ManualAdMarker.cancel()
+    }
+
+    fun markAdEnd() {
+        val episode = _currentPlayingEpisode.value ?: return
+        val durationMs = episode.durationSeconds * 1000L
+        when (
+            val result = ManualAdMarker.close(
+                state = _adMarkState.value,
+                positionMs = _playbackPositionMs.value,
+                durationMs = durationMs,
+            )
+        ) {
+            is AdMarkResult.Closed -> {
+                _adMarkState.value = ManualAdMarker.cancel()
+                viewModelScope.launch {
+                    val entity = ManualAdMarker.toEntity(
+                        episodeId = episode.id,
+                        podcastId = episode.podcastId,
+                        range = result.range,
+                    )
+                    adScanStore.upsertAdSegments(listOf(entity))
+                    learnFromManualMark(episode, entity)
+                    _storedAds.value = adScanStore.adSegments(episode.id)
+                }
+            }
+            AdMarkResult.RejectedTooShort ->
+                _sponsorSkipEvent.value = "Manual ad mark ignored: shorter than 5 seconds."
+            AdMarkResult.RejectedOrder ->
+                _sponsorSkipEvent.value = "Manual ad mark ignored: end must come after the start."
+            is AdMarkResult.Armed -> Unit
+        }
+    }
+
+    fun deleteManualAd(id: String) {
+        val episode = _currentPlayingEpisode.value ?: return
+        viewModelScope.launch {
+            adScanStore.deleteAdSegment(id)
+            _storedAds.value = adScanStore.adSegments(episode.id)
+        }
+    }
+
+    fun nudgeManualAd(id: String, moveStart: Boolean, deltaMs: Long) {
+        val episode = _currentPlayingEpisode.value ?: return
+        viewModelScope.launch {
+            val existing = adScanStore.adSegment(id) ?: return@launch
+            val moved = ManualAdMarker.nudge(
+                segment = existing,
+                moveStart = moveStart,
+                deltaMs = deltaMs,
+                durationMs = episode.durationSeconds * 1000L,
+            ) ?: return@launch
+            adScanStore.deleteAdSegment(id)
+            adScanStore.upsertAdSegments(listOf(moved))
+            _storedAds.value = adScanStore.adSegments(episode.id)
+        }
+    }
+
+    private suspend fun learnFromManualMark(episode: EpisodeEntity, ad: EpisodeAdSegmentEntity) {
+        val durationMs = episode.durationSeconds * 1000L
+        val learned = manualAdSlotLearner.learn(
+            existing = adScanStore.slots(episode.podcastId),
+            podcastId = episode.podcastId,
+            durationMs = durationMs,
+            ads = listOf(
+                DetectedAd(
+                    startMs = ad.startMs,
+                    endMs = ad.endMs,
+                    label = ad.label,
+                    confidence = ad.confidence,
+                    startCue = null,
+                    endCue = null,
+                    confirmed = true,
+                    source = AdSource.USER,
+                )
+            ),
+        )
+        adScanStore.saveSlots(episode.podcastId, learned)
+        if (adSlotsPodcastId == episode.podcastId) _adSlots.value = learned
     }
 
     // Trigger Ad Skip Manually
@@ -2260,7 +2374,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val ads = _currentAdSegments.value
         _isAdActive.value = ads.any { positionMs >= it.startMs && positionMs < it.endMs }
 
-        if (!_isAutoAdSkipEnabled.value || !_asrEnabled.value || !_asrModelReady.value) return
+        if (!_isAutoAdSkipEnabled.value) return
 
         when (val decision = adSkipDecider.decide(positionMs, ads, autoSkip = true)) {
             is SkipDecision.Skip -> {
