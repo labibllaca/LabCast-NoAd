@@ -3518,6 +3518,8 @@ fun FullPlayerScreen(
     val transcriptSegments by viewModel.transcriptSegments.collectAsStateWithLifecycle()
     val waveformAmplitudes by viewModel.waveformAmplitudes.collectAsStateWithLifecycle()
     val currentAdSegments by viewModel.currentAdSegments.collectAsStateWithLifecycle()
+    val adMarkState by viewModel.adMarkState.collectAsStateWithLifecycle()
+    val manualMarkedAds by viewModel.manualMarkedAds.collectAsStateWithLifecycle()
     val currentAudioEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
     val adsBlockedCount by viewModel.adsBlockedCount.collectAsStateWithLifecycle()
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
@@ -4040,6 +4042,21 @@ fun FullPlayerScreen(
                             }
                         }
                     }
+
+                    // Manual ad marks: press once at the start, once at the end.
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ManualAdControls(
+                        state = adMarkState,
+                        marks = manualMarkedAds,
+                        playbackPositionMs = playbackPositionMs,
+                        onStart = { viewModel.markAdStart() },
+                        onEnd = { viewModel.markAdEnd() },
+                        onCancel = { viewModel.cancelAdMark() },
+                        onDelete = { viewModel.deleteManualAd(it) },
+                        onNudge = { id, moveStart, deltaMs ->
+                            viewModel.nudgeManualAd(id, moveStart, deltaMs)
+                        },
+                    )
 
                     // If an ad anomaly is detected while switch is OFF, give immediate skip option
                     if (isAdActive) {
