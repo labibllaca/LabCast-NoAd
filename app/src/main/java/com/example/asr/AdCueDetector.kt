@@ -52,7 +52,7 @@ class AdCueDetector(
                 if (usableStartCue != null || (brand != null && promotional)) {
                     // If the phrase is split, the previous segment carries its start.
                     adStartMs = if (previous != null && usableStartCue != null &&
-                        !containsPhrase(normalized, usableStartCue)
+                        !matches(normalized, usableStartCue)
                     ) {
                         previous.startMs
                     } else {
@@ -116,8 +116,12 @@ class AdCueDetector(
     }
 
     private fun containsPhrase(haystack: String, phrase: String): Boolean {
-        val normalizedPhrase = TextMatch.normalize(phrase)
-        return normalizedPhrase.isNotEmpty() && haystack.contains(normalizedPhrase)
+        val hay = TextMatch.normalize(haystack).split(' ').filter { it.isNotEmpty() }
+        val target = TextMatch.normalize(phrase).split(' ').filter { it.isNotEmpty() }
+        if (target.isEmpty() || target.size > hay.size) return false
+        return (0..(hay.size - target.size)).any { start ->
+            hay.subList(start, start + target.size) == target
+        }
     }
 
     private fun matches(haystack: String, phrase: String): Boolean =
@@ -139,6 +143,7 @@ class AdCueDetector(
             "brought to you by",
             "support for this podcast",
             "a word from our sponsor",
+            "a word from our sponsors",
             "our sponsor today",
             "this episode is sponsored by",
             "promo code",

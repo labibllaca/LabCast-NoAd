@@ -137,9 +137,25 @@ class AdCueDetectorTest {
         val ads = detector.adsFromSegments(
             listOf(
                 AsrSegment(30_000, 34_000, "We should take a break.", 0.8f),
-                AsrSegment(35_000, 39_000, "Fifty percent of people agree.", 0.8f),
+                AsrSegment(35_000, 39_000, "That was a bad break.", 0.8f),
+                AsrSegment(40_000, 44_000, "Fifty percent of people agree.", 0.8f),
             )
         )
         assertTrue(ads.isEmpty())
+    }
+
+    @Test
+    fun `fuzzy cue spoken in one segment keeps that segment start`() {
+        val ads = detector.adsFromSegments(
+            listOf(
+                AsrSegment(0, 3_000, "This episode is sponsored by AG1.", 0.95f),
+                AsrSegment(60_000, 63_000, "And now back to the show.", 0.95f),
+                AsrSegment(300_000, 303_000, "A word from our sponsors. Use code SAVE.", 0.95f),
+                AsrSegment(360_000, 363_000, "Back to the show.", 0.95f),
+            )
+        )
+
+        assertEquals(2, ads.size)
+        assertEquals(300_000L, ads[1].startMs)
     }
 }
