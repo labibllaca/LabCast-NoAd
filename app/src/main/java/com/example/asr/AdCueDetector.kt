@@ -1,6 +1,5 @@
 package com.example.asr
 
-import java.util.Locale
 
 /**
  * Deterministic English ad-boundary detection over timestamped ASR segments.
@@ -14,6 +13,7 @@ class AdCueDetector(
     private val endPhrases: List<String> = DEFAULT_END_PHRASES,
     private val brands: List<String> = DEFAULT_BRANDS,
     private val promoPhrases: List<String> = DEFAULT_PROMO_PHRASES,
+    private val resumePhrases: List<String> = DEFAULT_RESUME_PHRASES,
 ) {
 
     fun adsFromSegments(
@@ -29,32 +29,42 @@ class AdCueDetector(
 
         segments.forEachIndexed { index, segment ->
             val previous = segments.getOrNull(index - 1)
-            val lower = segment.text.lowercase(Locale.ROOT)
+            val normalized = TextMatch.normalize(segment.text)
             val combined = buildString {
                 if (previous != null) {
-                    append(previous.text.lowercase(Locale.ROOT))
+                    append(TextMatch.normalize(previous.text))
                     append(' ')
                 }
-                append(lower)
+                append(normalized)
             }.trim()
 
             if (adStartMs == null) {
-                val startCue = startPhrases.firstOrNull { combined.contains(it) }
-                val brand = brands.firstOrNull { combined.contains(it.lowercase(Locale.ROOT)) }
-                val promotional = promoPhrases.any { combined.contains(it) }
+                val startCue = startPhrases.firstOrNull { matches(combined, it) }
+                val fuzzyOnlyStart = startCue != null && !containsPhrase(combined, startCue)
+                val usableStartCue = if (fuzzyOnlyStart && segment.endMs <= COLD_START_GUARD_MS) {
+                    null
+                } else {
+                    startCue
+                }
+                val brand = brands.firstOrNull { TextMatch.brandMatches(combined, it) }
+                val promotional = promoPhrases.any { matches(combined, it) }
 
-                if (startCue != null || (brand != null && promotional)) {
+                if (usableStartCue != null || (brand != null && promotional)) {
                     // If the phrase is split, the previous segment carries its start.
-                    adStartMs = if (previous != null && startCue != null && !lower.contains(startCue)) {
+                    adStartMs = if (previous != null && usableStartCue != null &&
+                        !containsPhrase(normalized, usableStartCue)
+                    ) {
                         previous.startMs
                     } else {
                         segment.startMs
                     }
-                    adStartCue = startCue ?: "brand + promotional language"
+                    adStartCue = usableStartCue ?: "brand + promotional language"
                     adLabel = brand ?: "Sponsored segment"
                 }
             } else {
-                val endCue = endPhrases.firstOrNull { combined.contains(it) }
+                val elapsed = segment.endMs - adStartMs!!
+                val endCue = endPhrases.firstOrNull { matches(combined, it) }
+                    ?: resumePhrases.firstOrNull { elapsed >= RESUME_MIN_ELAPSED_MS && matches(combined, it) }
                 if (endCue != null) {
                     val start = adStartMs!!
                     ads += DetectedAd(
@@ -105,8 +115,19 @@ class AdCueDetector(
         return ads.sortedBy { it.startMs }
     }
 
+    private fun containsPhrase(haystack: String, phrase: String): Boolean {
+        val normalizedPhrase = TextMatch.normalize(phrase)
+        return normalizedPhrase.isNotEmpty() && haystack.contains(normalizedPhrase)
+    }
+
+    private fun matches(haystack: String, phrase: String): Boolean =
+        containsPhrase(haystack, phrase) || TextMatch.fuzzyContains(haystack, phrase, FUZZY_THRESHOLD)
+
     companion object {
         const val DEFAULT_MAX_AD_MS = 180_000L
+        const val COLD_START_GUARD_MS = 8_000L
+        const val RESUME_MIN_ELAPSED_MS = 20_000L
+        private const val FUZZY_THRESHOLD = 0.84
 
         val DEFAULT_START_PHRASES = listOf(
             "sponsored by",
@@ -130,6 +151,13 @@ class AdCueDetector(
             "now back to",
             "let's get back to",
             "welcome back",
+        )
+
+        /** Only consulted after [RESUME_MIN_ELAPSED_MS] of an open ad. */
+        val DEFAULT_RESUME_PHRASES = listOf(
+            "so anyway",
+            "where were we",
+            "anyway where were we",
         )
 
         val DEFAULT_PROMO_PHRASES = listOf(
