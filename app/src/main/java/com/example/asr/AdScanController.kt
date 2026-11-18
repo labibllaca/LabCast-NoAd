@@ -368,7 +368,9 @@ class AdScanController(
     }
 
     private suspend fun protectedAds(episode: EpisodeEntity): List<EpisodeAdSegmentEntity> =
-        (store.adSegments(episode.id) + ads)
+        // Only the store is authoritative: an in-memory copy would resurrect a
+        // mark the listener deleted while this scan was running.
+        store.adSegments(episode.id)
             .filter { it.source == AdSource.USER.name }
             .distinctBy { it.id }
 
@@ -376,18 +378,20 @@ class AdScanController(
         existing: List<EpisodeAdSegmentEntity>,
         detected: List<EpisodeAdSegmentEntity>,
     ): List<EpisodeAdSegmentEntity> {
-        val merged = existing.toMutableList()
         // Two manual marks that overlap are the same assertion made twice: newest wins.
-        val userIds = existing.filter { it.source == AdSource.USER.name }
+        val keptUsers = existing.filter { it.source == AdSource.USER.name }
             .sortedByDescending { it.createdAt }
             .fold(mutableListOf<EpisodeAdSegmentEntity>()) { kept, candidate ->
                 val overlaps = kept.any { it.startMs < candidate.endMs && candidate.startMs < it.endMs }
                 if (!overlaps) kept += candidate
                 kept
             }
-            .map { it.id }
-            .toSet()
-        merged.removeAll { it.source == AdSource.USER.name && it.id !in userIds }
+        // A user mark replaces any detected ad it overlaps, including one that
+        // was already stored before the mark was made.
+        val merged = keptUsers.toMutableList()
+        existing.filter { it.source != AdSource.USER.name }
+            .filterNot { ad -> keptUsers.any { it.startMs < ad.endMs && ad.startMs < it.endMs } }
+            .forEach { merged += it }
         detected.forEach { incoming ->
             val index = merged.indexOfFirst { it.startMs < incoming.endMs && incoming.startMs < it.endMs }
             if (index < 0) {

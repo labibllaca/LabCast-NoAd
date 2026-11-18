@@ -48,4 +48,19 @@ class TextMatchTest {
         assertTrue(TextMatch.brandMatches("i drink ag one every morning", "AG1"))
         assertFalse(TextMatch.brandMatches("i drink water every morning", "AG1"))
     }
+
+    @Test
+    fun `cues in ordinary conversation do not match`() {
+        assertFalse(TextMatch.fuzzyContains("we should take a break", "ad break"))
+        assertFalse(TextMatch.fuzzyContains("i used code all day", "use code"))
+        assertFalse(TextMatch.fuzzyContains("we sponsored but nobody came", "sponsored by"))
+        assertFalse(TextMatch.fuzzyContains("fifty percent of people", "percent off"))
+    }
+
+    @Test
+    fun `single word brands need a near exact match`() {
+        assertFalse(TextMatch.brandMatches("fifty percent of people", "Babbel"))
+        assertFalse(TextMatch.brandMatches("we sponsored but nobody came", "Babbel"))
+        assertFalse(TextMatch.brandMatches("big one", "AG1"))
+    }
 }

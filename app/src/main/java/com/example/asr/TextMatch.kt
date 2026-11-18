@@ -13,6 +13,12 @@ import kotlin.math.max
  */
 object TextMatch {
 
+    private const val SINGLE_WORD_BRAND_THRESHOLD = 0.90
+    private const val MULTI_WORD_BRAND_THRESHOLD = 0.84
+    private const val PHONETIC_MIN_LENGTH = 6
+    private const val PHONETIC_MIN_SCORE = 0.70
+    private const val MIN_TOKEN_SIMILARITY = 0.80
+
     private val DIGIT_WORDS = listOf(
         "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
     )
@@ -58,21 +64,23 @@ object TextMatch {
             .filter { it.isNotEmpty() }
             .map { CANONICAL[it] ?: it }
 
-    /** True when [needle] appears in [haystack] up to [threshold] word-edit similarity. */
+    /**
+     * True when [needle] appears in [haystack] as a same-length token window
+     * whose average per-word similarity reaches [threshold].
+     *
+     * Words are compared one by one, not as one long string: character
+     * similarity over a whole phrase lets short cues hide inside ordinary
+     * sentences ("a break" in "take a break").
+     */
     fun fuzzyContains(haystack: String, needle: String, threshold: Double = 0.84): Boolean {
         val hay = tokens(haystack)
         val target = tokens(needle)
-        if (hay.isEmpty() || target.isEmpty()) return false
-        if (hay.size == target.size && hay == target) return true
+        if (hay.isEmpty() || target.isEmpty() || target.size > hay.size) return false
 
-        val minWindow = max(1, target.size - 1)
-        val maxWindow = target.size + 1
-        for (size in minWindow..maxWindow) {
-            if (size > hay.size) break
-            for (start in 0..(hay.size - size)) {
-                val candidate = hay.subList(start, start + size).joinToString(" ")
-                if (similarity(candidate, target.joinToString(" ")) >= threshold) return true
-            }
+        for (start in 0..(hay.size - target.size)) {
+            val window = hay.subList(start, start + target.size)
+            if (window == target) return true
+            if (windowSimilarity(window, target) >= threshold) return true
         }
         return false
     }
@@ -106,25 +114,60 @@ object TextMatch {
         return out.toString()
     }
 
-    /** True when [brand] appears exactly, phonetically, or fuzzily in [haystack]. */
+    /**
+     * True when [brand] appears exactly, as a joined word ("square space" for
+     * "Squarespace"), or fuzzily at a brand-safe threshold.
+     *
+     * Single-word brands need 0.90 so short words do not match by accident.
+     * The phonetic rescue is limited to tokens of at least six letters whose
+     * fuzzy score sits between 0.70 and 0.84, as the design requires.
+     */
     fun brandMatches(haystack: String, brand: String): Boolean {
         val hay = tokens(haystack)
         val target = tokens(brand)
         if (hay.isEmpty() || target.isEmpty()) return false
 
-        for (size in max(1, target.size - 1)..(target.size + 1)) {
-            if (size > hay.size) break
-            for (start in 0..(hay.size - size)) {
-                val window = hay.subList(start, start + size)
-                if (window == target) return true
-                if (window.size == target.size &&
-                    window.indices.all { phoneticKey(window[it]) == phoneticKey(target[it]) }
-                ) {
-                    return true
+        if (target.size == 1) {
+            val word = target.single()
+            if (hay.any { it == word }) return true
+            for (size in 2..3) {
+                if (size > hay.size) break
+                for (start in 0..(hay.size - size)) {
+                    if (hay.subList(start, start + size).joinToString("") == word) return true
                 }
             }
+            return hay.any { candidate ->
+                val score = similarity(candidate, word)
+                score >= SINGLE_WORD_BRAND_THRESHOLD ||
+                    (word.length >= PHONETIC_MIN_LENGTH &&
+                        score >= PHONETIC_MIN_SCORE && score < 0.84 &&
+                        phoneticKey(candidate) == phoneticKey(word))
+            }
         }
-        return fuzzyContains(haystack, brand, 0.70)
+
+        val joinedTarget = target.joinToString("")
+        for (start in 0..(hay.size - target.size)) {
+            if (hay.subList(start, start + target.size) == target) return true
+            if (hay.subList(start, start + target.size).joinToString("") == joinedTarget) return true
+        }
+        for (size in 1..4) {
+            if (size > hay.size) break
+            for (start in 0..(hay.size - size)) {
+                val joined = hay.subList(start, start + size).joinToString("")
+                if (joined == joinedTarget) return true
+                if (similarity(joined, joinedTarget) >= MULTI_WORD_BRAND_THRESHOLD) return true
+            }
+        }
+        return false
+    }
+
+    private fun windowSimilarity(window: List<String>, target: List<String>): Double {
+        if (window.size != target.size || window.isEmpty()) return 0.0
+        val scores = window.indices.map { similarity(window[it], target[it]) }
+        // One badly heard word inside a cue would otherwise be diluted by the
+        // good words; each word must at least resemble its counterpart.
+        if (scores.any { it < MIN_TOKEN_SIMILARITY }) return 0.0
+        return scores.average()
     }
 
     private fun spellDigits(run: String): String {

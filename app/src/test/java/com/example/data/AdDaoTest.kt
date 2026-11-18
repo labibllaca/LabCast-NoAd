@@ -69,4 +69,22 @@ class AdDaoTest {
         dao.deleteAdSegment("e:1000:2000")
         assertEquals(null, dao.adSegment("e:1000:2000"))
     }
+
+    @Test
+    fun `deleting detected ads keeps user marks`() = runBlocking {
+        dao.upsertAdSegments(
+            listOf(
+                EpisodeAdSegmentEntity(
+                    "e:1000:2000", "e", "p", 1_000, 2_000, "Manual mark", 1f, "USER", true, 1,
+                ),
+                EpisodeAdSegmentEntity(
+                    "e:10000:60000", "e", "p", 10_000, 60_000, "AG1", 0.9f, "ASR", true, 1,
+                ),
+            )
+        )
+
+        dao.deleteNonUserAdSegments("e")
+
+        assertEquals(listOf("e:1000:2000"), dao.adSegments("e").map { it.id })
+    }
 }

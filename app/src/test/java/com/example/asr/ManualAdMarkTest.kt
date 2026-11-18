@@ -65,4 +65,10 @@ class ManualAdMarkTest {
         assertNull(ManualAdMarker.nudge(e, moveStart = true, deltaMs = -11_000, durationMs = 600_000))
         assertNull(ManualAdMarker.nudge(e, moveStart = false, deltaMs = 600_000, durationMs = 600_000))
     }
+
+    @Test
+    fun `duration limit follows the live playhead when the feed is too short`() {
+        assertEquals(1_900_000L, ManualAdMarker.durationLimit(1_800_000L, 1_900_000L))
+        assertEquals(1_800_000L, ManualAdMarker.durationLimit(1_800_000L, 1_700_000L))
+    }
 }

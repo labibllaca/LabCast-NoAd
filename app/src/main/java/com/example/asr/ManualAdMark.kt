@@ -32,6 +32,15 @@ object ManualAdMarker {
 
     fun cancel(): AdMarkState = AdMarkState()
 
+    /**
+     * The boundary limit for a new mark or nudge.
+     *
+     * Feed durations are often wrong and dynamic ad insertion can make the
+     * audio longer, so a boundary the listener has actually reached wins.
+     */
+    fun durationLimit(feedDurationMs: Long, positionMs: Long): Long =
+        maxOf(feedDurationMs, positionMs)
+
     fun close(state: AdMarkState, positionMs: Long, durationMs: Long): AdMarkResult {
         val start = state.startMs ?: return AdMarkResult.RejectedOrder
         val end = positionMs.coerceAtMost(durationMs)

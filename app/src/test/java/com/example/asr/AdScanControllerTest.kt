@@ -97,6 +97,17 @@ class AdScanControllerTest {
     }
 
     @Test
+    fun `a stored user mark removes an overlapping detected ad`() = runTest {
+        val controller = controller(FakeStore(), FakePcmSource(durationMs = 600_000), FakeEngine(emptyMap()))
+        val merged = controller.mergeAds(
+            existing = listOf(asrAd(10_000, 100_000), userAd(10_000, 60_000)),
+            detected = emptyList(),
+        )
+        assertEquals(listOf("USER"), merged.map { it.source })
+        assertEquals(60_000L, merged.single().endMs)
+    }
+
+    @Test
     fun `start clears ads before the disabled early return`() = runTest {
         val controller = controller(
             FakeStore(),

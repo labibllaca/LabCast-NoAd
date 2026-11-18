@@ -20,13 +20,15 @@ class SherpaSpeechRecognizer(
     modelDir: File,
     numThreads: Int = 2,
     hotwords: String = "",
+    private val bpeVocab: File? = null,
 ) : SpeechRecognizerEngine {
 
     private val recognizer: OnlineRecognizer
     private val streamHotwords: String
 
     init {
-        var used = hotwords
+        val canBias = hotwords.isNotBlank() && bpeVocab != null && bpeVocab.isFile
+        var used = if (canBias) hotwords else ""
         var created: OnlineRecognizer? = null
         if (used.isNotEmpty()) {
             created = runCatching { buildRecognizer(modelDir, numThreads, used) }
@@ -40,6 +42,7 @@ class SherpaSpeechRecognizer(
     }
 
     private fun buildRecognizer(modelDir: File, numThreads: Int, hotwords: String): OnlineRecognizer {
+        val bias = hotwords.isNotEmpty() && bpeVocab != null
         val modelConfig = OnlineModelConfig(
             transducer = OnlineTransducerModelConfig(
                 encoder = File(modelDir, AsrModelRegistry.encoderName).absolutePath,
@@ -51,12 +54,16 @@ class SherpaSpeechRecognizer(
             debug = false,
             provider = "cpu",
             modelType = "zipformer",
+            modelingUnit = if (bias) "bpe" else "",
+            bpeVocab = if (bias) bpeVocab?.absolutePath.orEmpty() else "",
         )
         val config = OnlineRecognizerConfig(
             featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
             modelConfig = modelConfig,
             enableEndpoint = true,
-            decodingMethod = "greedy_search",
+            // sherpa-onnx only applies hotwords with beam search.
+            decodingMethod = if (bias) "modified_beam_search" else "greedy_search",
+            maxActivePaths = 4,
             hotwordsScore = HOTWORDS_SCORE,
         )
         return OnlineRecognizer(assetManager = null, config = config)

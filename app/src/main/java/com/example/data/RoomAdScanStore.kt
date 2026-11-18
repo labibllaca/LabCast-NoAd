@@ -24,6 +24,10 @@ class RoomAdScanStore(private val dao: AdDao) : AdScanStore {
     override suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity> =
         dao.adSegments(episodeId)
 
+    override suspend fun upsertAdSegments(segments: List<EpisodeAdSegmentEntity>) {
+        if (segments.isNotEmpty()) dao.upsertAdSegments(segments)
+    }
+
     override suspend fun adSegment(id: String): EpisodeAdSegmentEntity? = dao.adSegment(id)
 
     override suspend fun deleteAdSegment(id: String) = dao.deleteAdSegment(id)
@@ -32,7 +36,9 @@ class RoomAdScanStore(private val dao: AdDao) : AdScanStore {
         episodeId: String,
         segments: List<EpisodeAdSegmentEntity>,
     ) {
-        dao.deleteAdSegments(episodeId)
+        // User marks are never deleted here: a scan must not lose a mark the
+        // listener made while it was running.
+        dao.deleteNonUserAdSegments(episodeId)
         if (segments.isNotEmpty()) dao.upsertAdSegments(segments)
     }
 

@@ -39,6 +39,7 @@ import com.example.player.AdSkipDecider
 import com.example.player.SkipDecision
 import com.example.service.PodcastMediaService
 import com.example.util.EpisodeDownloader
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -72,6 +73,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     brands = AdCueDetector.DEFAULT_BRANDS,
                     cues = AdCueDetector.DEFAULT_START_PHRASES,
                 ),
+                bpeVocab = ensureBpeVocab(),
             )
         },
         pcmSources = MediaPcmSourceFactory(application, application.cacheDir),
@@ -871,8 +873,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 adScanController.currentAds,
                 _storedAds,
                 _asrEnabled,
-            ) { detected, stored, asr ->
-                AdSelection.visible((stored + detected).distinctBy { it.id }, asr)
+                _currentPlayingEpisode,
+            ) { detected, stored, asr, episode ->
+                val episodeId = episode?.id ?: return@combine emptyList()
+                AdSelection.playback(stored, detected, asr, episodeId)
             }.collect { _currentAdSegments.value = it }
         }
 
@@ -1322,7 +1326,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             var currentEp = episode
             _currentPlayingEpisode.value = currentEp
             _adMarkState.value = AdMarkState()
-            _storedAds.value = adScanStore.adSegments(currentEp.id)
+            refreshStoredAds(currentEp)
 
             // Smart Context Rewind:
             // When resuming an episode after a pause of > 10 min or on cold start with significant progress (>15s),
@@ -1733,7 +1737,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _asrEnabled.value = enabled
         asrPreferences.enabled = enabled
         _currentPlayingEpisode.value?.let { episode ->
-            viewModelScope.launch { _storedAds.value = adScanStore.adSegments(episode.id) }
+            viewModelScope.launch { refreshStoredAds(episode) }
         }
         if (!enabled) {
             adScanController.stop()
@@ -1750,6 +1754,18 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             adScanController.start(episode, _playbackPositionMs.value)
         }
     }
+
+    /** Copies the bundled BPE vocabulary beside the model so hotwords can be encoded. */
+    private fun ensureBpeVocab(): File? = runCatching {
+        val target = File(modelDownloadManager.modelDir(), "bpe.vocab")
+        if (!target.isFile) {
+            target.parentFile?.mkdirs()
+            getApplication<Application>().assets.open("asr/bpe.vocab").use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            }
+        }
+        target
+    }.getOrNull()
 
     fun downloadAsrModel() {
         viewModelScope.launch {
@@ -1840,7 +1856,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     fun markAdEnd() {
         val episode = _currentPlayingEpisode.value ?: return
-        val durationMs = episode.durationSeconds * 1000L
+        val durationMs = ManualAdMarker.durationLimit(
+            feedDurationMs = episode.durationSeconds * 1000L,
+            positionMs = _playbackPositionMs.value,
+        )
         when (
             val result = ManualAdMarker.close(
                 state = _adMarkState.value,
@@ -1858,7 +1877,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     )
                     adScanStore.upsertAdSegments(listOf(entity))
                     learnFromManualMark(episode, entity)
-                    _storedAds.value = adScanStore.adSegments(episode.id)
+                    refreshStoredAds(episode)
                 }
             }
             AdMarkResult.RejectedTooShort ->
@@ -1873,7 +1892,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val episode = _currentPlayingEpisode.value ?: return
         viewModelScope.launch {
             adScanStore.deleteAdSegment(id)
-            _storedAds.value = adScanStore.adSegments(episode.id)
+            refreshStoredAds(episode)
         }
     }
 
@@ -1885,16 +1904,28 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 segment = existing,
                 moveStart = moveStart,
                 deltaMs = deltaMs,
-                durationMs = episode.durationSeconds * 1000L,
+                durationMs = ManualAdMarker.durationLimit(
+                    feedDurationMs = episode.durationSeconds * 1000L,
+                    positionMs = _playbackPositionMs.value,
+                ),
             ) ?: return@launch
             adScanStore.deleteAdSegment(id)
             adScanStore.upsertAdSegments(listOf(moved))
-            _storedAds.value = adScanStore.adSegments(episode.id)
+            refreshStoredAds(episode)
         }
     }
 
+    /** Reloads marks unless the listener already switched episodes. */
+    private suspend fun refreshStoredAds(episode: EpisodeEntity) {
+        val ads = adScanStore.adSegments(episode.id)
+        if (_currentPlayingEpisode.value?.id == episode.id) _storedAds.value = ads
+    }
+
     private suspend fun learnFromManualMark(episode: EpisodeEntity, ad: EpisodeAdSegmentEntity) {
-        val durationMs = episode.durationSeconds * 1000L
+        val durationMs = ManualAdMarker.durationLimit(
+            feedDurationMs = episode.durationSeconds * 1000L,
+            positionMs = ad.endMs,
+        )
         val learned = manualAdSlotLearner.learn(
             existing = adScanStore.slots(episode.podcastId),
             podcastId = episode.podcastId,

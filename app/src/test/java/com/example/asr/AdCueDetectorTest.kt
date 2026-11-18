@@ -120,4 +120,26 @@ class AdCueDetectorTest {
         )
         assertEquals("brought to you by", ads[0].startCue)
     }
+
+    @Test
+    fun `banter about a sponsor does not open an ad`() {
+        val ads = detector.adsFromSegments(
+            listOf(
+                AsrSegment(30_000, 34_000, "Thanks to our sponsor for the coffee, so anyway.", 0.8f),
+                AsrSegment(40_000, 44_000, "Where were we? Right, the break.", 0.8f),
+            )
+        )
+        assertTrue(ads.isEmpty())
+    }
+
+    @Test
+    fun `ordinary conversational phrases do not open an ad`() {
+        val ads = detector.adsFromSegments(
+            listOf(
+                AsrSegment(30_000, 34_000, "We should take a break.", 0.8f),
+                AsrSegment(35_000, 39_000, "Fifty percent of people agree.", 0.8f),
+            )
+        )
+        assertTrue(ads.isEmpty())
+    }
 }

@@ -42,6 +42,9 @@ interface AdDao {
     @Query("DELETE FROM episode_ad_segments WHERE episodeId = :episodeId")
     suspend fun deleteAdSegments(episodeId: String)
 
+    @Query("DELETE FROM episode_ad_segments WHERE episodeId = :episodeId AND source != 'USER'")
+    suspend fun deleteNonUserAdSegments(episodeId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAsrSegments(segments: List<EpisodeAsrSegmentEntity>)
 

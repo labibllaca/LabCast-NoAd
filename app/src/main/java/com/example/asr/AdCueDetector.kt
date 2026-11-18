@@ -121,13 +121,18 @@ class AdCueDetector(
     }
 
     private fun matches(haystack: String, phrase: String): Boolean =
-        containsPhrase(haystack, phrase) || TextMatch.fuzzyContains(haystack, phrase, FUZZY_THRESHOLD)
+        containsPhrase(haystack, phrase) ||
+            (TextMatch.tokens(phrase).size >= MIN_FUZZY_CUE_TOKENS &&
+                TextMatch.fuzzyContains(haystack, phrase, FUZZY_THRESHOLD))
 
     companion object {
         const val DEFAULT_MAX_AD_MS = 180_000L
         const val COLD_START_GUARD_MS = 8_000L
         const val RESUME_MIN_ELAPSED_MS = 20_000L
         private const val FUZZY_THRESHOLD = 0.84
+        // Short cues ("ad break", "use code") are too easy to hit in ordinary
+        // speech, so only longer phrases get the fuzzy allowance.
+        private const val MIN_FUZZY_CUE_TOKENS = 3
 
         val DEFAULT_START_PHRASES = listOf(
             "sponsored by",
@@ -135,7 +140,6 @@ class AdCueDetector(
             "support for this podcast",
             "a word from our sponsor",
             "our sponsor today",
-            "thanks to our sponsor",
             "this episode is sponsored by",
             "promo code",
             "use code",
