@@ -1362,12 +1362,18 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
     val selectedEpisodeIds by viewModel.selectedEpisodeIds.collectAsStateWithLifecycle()
     val isBatchDownloading by viewModel.isBatchDownloading.collectAsStateWithLifecycle()
     val isRefreshingEpisodes by viewModel.isRefreshingEpisodes.collectAsStateWithLifecycle()
+    val adSlots by viewModel.adSlots.collectAsStateWithLifecycle()
 
     var episodeSearchQuery by remember { mutableStateOf("") }
     var sortOrder by remember { mutableStateOf(EpisodeSortOrder.NEWEST) }
     var showSortMenu by remember { mutableStateOf(false) }
 
     val podcastEpisodes = episodes.filter { it.podcastId == podcast.id }
+    val maxSlotDurationMs = (podcastEpisodes.maxOfOrNull { it.durationSeconds } ?: 3600L) * 1000L
+
+    LaunchedEffect(podcast.id) {
+        viewModel.loadAdSlots(podcast.id)
+    }
 
     val filteredEpisodes = podcastEpisodes
         .filter { ep ->
@@ -1612,6 +1618,20 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
             )
             Spacer(modifier = Modifier.height(4.dp))
             HorizontalDivider(color = BorderGray, thickness = 1.dp)
+        }
+
+        // Learned ad slots for this show
+        item {
+            AdSlotsSection(
+                slots = adSlots,
+                episodeDurationMs = maxSlotDurationMs,
+                onEdit = { slot, startMs, durationMs ->
+                    viewModel.editAdSlot(slot, startMs, durationMs, maxSlotDurationMs)
+                },
+                onToggle = { viewModel.toggleAdSlot(it) },
+                onDelete = { viewModel.deleteAdSlot(it) },
+                onRelearn = { viewModel.relearnShow(podcast.id) },
+            )
         }
 
         // Podcast-Specific Episode Search & Sort Controls
@@ -3497,9 +3517,10 @@ fun FullPlayerScreen(
     val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
     val transcriptSegments by viewModel.transcriptSegments.collectAsStateWithLifecycle()
     val waveformAmplitudes by viewModel.waveformAmplitudes.collectAsStateWithLifecycle()
-    val acousticAdSegments by viewModel.acousticAdSegments.collectAsStateWithLifecycle()
+    val currentAdSegments by viewModel.currentAdSegments.collectAsStateWithLifecycle()
+    val adMarkState by viewModel.adMarkState.collectAsStateWithLifecycle()
+    val manualMarkedAds by viewModel.manualMarkedAds.collectAsStateWithLifecycle()
     val currentAudioEnergy by viewModel.currentAudioEnergy.collectAsStateWithLifecycle()
-    val lastAcousticAdAlert by viewModel.lastAcousticAdAlert.collectAsStateWithLifecycle()
     val adsBlockedCount by viewModel.adsBlockedCount.collectAsStateWithLifecycle()
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
 
@@ -3916,7 +3937,7 @@ fun FullPlayerScreen(
                                     }
                                 }
                                 Text(
-                                    text = if (isAutoAdSkipEnabled) "Auto-zapping audio-wave spikes & sponsors" else "Ads allowed (switched off)",
+                                    text = if (isAutoAdSkipEnabled) "On-device English ad detection" else "Ads allowed (switched off)",
                                     color = if (isAutoAdSkipEnabled) primaryAccentGlow else colors.textMuted,
                                     fontSize = 10.sp,
                                     maxLines = 1
@@ -3958,14 +3979,14 @@ fun FullPlayerScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Acoustic Waveform Analysis",
+                                        text = "Live Audio Monitor",
                                         color = colors.textMuted,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                                 Text(
-                                    text = if (isAdActive) "⚡ AD WAVE SPIKE DETECTED" else "RMS Level: ${(currentAudioEnergy * 100).toInt()}%",
+                                    text = if (isAdActive) "AD SEGMENT CONFIRMED" else "Level: ${(currentAudioEnergy * 100).toInt()}%",
                                     color = if (isAdActive) adAccent else primaryAccentGlow,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Black
@@ -3995,7 +4016,7 @@ fun FullPlayerScreen(
 
                                     waveformAmplitudes.forEachIndexed { index, amp ->
                                         val barSec = (index.toFloat() / totalBars) * (episode!!.durationSeconds)
-                                        val isAcousticAd = acousticAdSegments.any { barSec >= (it.startMs / 1000) && barSec <= (it.endMs / 1000) }
+                                        val isAcousticAd = currentAdSegments.any { barSec >= (it.startMs / 1000) && barSec <= (it.endMs / 1000) }
                                         val isPast = index <= currentBarIndex
 
                                         val barColor = when {
@@ -4021,6 +4042,21 @@ fun FullPlayerScreen(
                             }
                         }
                     }
+
+                    // Manual ad marks: press once at the start, once at the end.
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ManualAdControls(
+                        state = adMarkState,
+                        marks = manualMarkedAds,
+                        playbackPositionMs = playbackPositionMs,
+                        onStart = { viewModel.markAdStart() },
+                        onEnd = { viewModel.markAdEnd() },
+                        onCancel = { viewModel.cancelAdMark() },
+                        onDelete = { viewModel.deleteManualAd(it) },
+                        onNudge = { id, moveStart, deltaMs ->
+                            viewModel.nudgeManualAd(id, moveStart, deltaMs)
+                        },
+                    )
 
                     // If an ad anomaly is detected while switch is OFF, give immediate skip option
                     if (isAdActive) {
@@ -4569,10 +4605,6 @@ fun TranscriptBottomSheet(
     var searchQuery by remember { mutableStateOf("") }
     var filterSponsorsOnly by remember { mutableStateOf(false) }
 
-    val isSttScanning by viewModel.isSttScanning.collectAsStateWithLifecycle()
-    val sttLiveText by viewModel.sttLiveText.collectAsStateWithLifecycle()
-    val sttMatchedKeywords by viewModel.sttMatchedKeywords.collectAsStateWithLifecycle()
-    val sttConfidenceScore by viewModel.sttConfidenceScore.collectAsStateWithLifecycle()
     val isTranscriptRefreshing by viewModel.isTranscriptRefreshing.collectAsStateWithLifecycle()
     val suggestedAdChunks by viewModel.suggestedAdChunks.collectAsStateWithLifecycle()
 
@@ -4688,121 +4720,6 @@ fun TranscriptBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(12.dp))
-
-            // Speech-To-Text (STT) Live Ad Keyword Scanner Console Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = if (colors.isDark) DarkCharcoal else LightCard),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(
-                        1.dp,
-                        if (sttMatchedKeywords.isNotEmpty()) adAccent else primaryAccent.copy(alpha = 0.4f),
-                        RoundedCornerShape(14.dp)
-                    )
-                    .testTag("stt_ad_scanner_card")
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.RecordVoiceOver,
-                                contentDescription = null,
-                                tint = if (isSttScanning) primaryAccent else colors.textMuted,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Speech-To-Text (STT) Ad Keyword Scanner",
-                                color = colors.textPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-
-                        Button(
-                            onClick = { viewModel.toggleSttScanner() },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSttScanning) primaryAccent else (if (colors.isDark) DarkCharcoal else LightCanvas),
-                                contentColor = if (isSttScanning) (if (colors.isDark) ObsidianBlack else Color.White) else colors.textPrimary
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            border = if (!isSttScanning) BorderStroke(1.dp, colors.itemBorder) else null,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp).testTag("button_toggle_stt")
-                        ) {
-                            Text(
-                                text = if (isSttScanning) "Scanning ON" else "Start STT",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    if (isSttScanning || sttLiveText.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Live Transcribed Speech:",
-                            color = colors.textMuted,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (sttLiveText.isNotEmpty()) "\"$sttLiveText\"" else "Listening for live audio speech...",
-                            color = colors.textPrimary,
-                            fontSize = 11.sp,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            lineHeight = 14.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Matched ad keywords badges
-                        Column(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Ad Keywords Found",
-                                color = colors.textMuted,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-
-                            if (sttMatchedKeywords.isEmpty()) {
-                                Text(
-                                    text = "None in current speech window",
-                                    color = primaryAccentGlow,
-                                    fontSize = 10.sp
-                                )
-                            } else {
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    items(sttMatchedKeywords) { kw ->
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = AdGold.copy(alpha = 0.25f),
-                                            border = BorderStroke(1.dp, AdGold)
-                                        ) {
-                                            Text(
-                                                text = "⚠️ $kw",
-                                                color = adAccent,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Black,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
 
             Spacer(modifier = Modifier.height(12.dp))
 

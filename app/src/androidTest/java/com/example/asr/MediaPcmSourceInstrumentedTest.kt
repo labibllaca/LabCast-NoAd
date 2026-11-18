@@ -1,0 +1,52 @@
+package com.example.asr
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.LargeTest
+import androidx.test.platform.app.InstrumentationRegistry
+import com.example.data.EpisodeEntity
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+@LargeTest
+class MediaPcmSourceInstrumentedTest {
+
+    @Test
+    fun decodesFirstTenSecondsOfRealEpisode() = runTest {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val testContext = InstrumentationRegistry.getInstrumentation().context
+        val audio = java.io.File(ctx.cacheDir, "asr_sample.m4a")
+        testContext.assets.open("asr_sample.m4a").use { input ->
+            audio.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        val ep = EpisodeEntity(
+            id = "x",
+            podcastId = "p",
+            podcastTitle = "",
+            podcastCoverUrl = "",
+            title = "",
+            description = "",
+            durationSeconds = 10,
+            publishDate = "",
+            audioUrl = "",
+            downloadLocalPath = audio.absolutePath,
+        )
+        val source = MediaPcmSourceFactory(ctx, ctx.cacheDir).create(ep)
+        val reader = source.reader(0)
+        val out = FloatArray(1_600)
+        var total = 0
+        var reads = 0
+        try {
+            while (total < 50_000 && reads < 1_000) {
+                total += reader.read(out)
+                reads++
+            }
+        } finally {
+            reader.close()
+        }
+        assertTrue("total=$total reads=$reads", total >= 50_000)
+    }
+}

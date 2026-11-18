@@ -41,6 +41,8 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
 
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val isAutoAdSkip by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val asrEnabled by viewModel.asrEnabled.collectAsStateWithLifecycle()
+    val asrModelState by viewModel.asrModelState.collectAsStateWithLifecycle()
     val isIntroSkip by viewModel.isIntroSkipEnabled.collectAsStateWithLifecycle()
     val isSmartDownload by viewModel.isSmartDownloadEnabled.collectAsStateWithLifecycle()
     val isOfflineOnly by viewModel.isOfflineModeOnly.collectAsStateWithLifecycle()
@@ -880,7 +882,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Überspringt Werbeblöcke von 'Sponsors' bis 'Back to the show' mit RMS-Lautstärkeabgleich in < 250ms.",
+                                text = "Überspringt nur Werbesegmente, die durch eine gesprochene Ansage bestätigt wurden. Kein Skip rein aufgrund von Zeitmarken.",
                                 color = colors.textMuted,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
@@ -898,6 +900,16 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             modifier = Modifier.testTag("toggle_auto_ad_skip_settings")
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    AsrSettingsSection(
+                        enabled = asrEnabled,
+                        state = asrModelState,
+                        onToggle = { viewModel.setAsrEnabled(it) },
+                        onDownload = { viewModel.downloadAsrModel() },
+                        onDelete = { viewModel.deleteAsrModel() },
+                    )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -921,7 +933,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                 border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f))
                             ) {
                                 Text(
-                                    text = "AOM PRESET: 28s",
+                                    text = "KAPITEL / TRANSKRIPT",
                                     color = CyberGreen,
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
@@ -930,7 +942,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Überspringt musikalische Anfangs-Jingles (z. B. The Art of Manliness Rock-Intro) automatisch bis zum Sprechbeginn.",
+                                text = "Überspringt ein Intro nur, wenn Kapitel oder Transkript den Sprechbeginn belegen.",
                                 color = colors.textMuted,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
