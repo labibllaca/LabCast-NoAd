@@ -492,6 +492,6 @@ class AdScanController(
         const val SAMPLE_RATE = 16_000
         const val CHUNK_SAMPLES = 1_600
         const val LOOK_AHEAD_MS = 180_000L
-        const val MODEL_VERSION = "zipformer-en-20m-2023-02-17"
+        const val MODEL_VERSION = AsrModelRegistry.modelDirName
     }
 }

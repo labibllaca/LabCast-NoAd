@@ -17,33 +17,37 @@ data class AsrModelFile(
  * Pinned English-only model set for on-device ad detection.
  *
  * Runtime: sherpa-onnx streaming Zipformer (English, int8).
- * Model: csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17 (Apache-2.0).
+ * Model: csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26 (Apache-2.0).
  * VAD: Silero VAD (Apache-2.0).
  */
 object AsrModelRegistry {
-    const val modelDirName = "zipformer-en-20m-2023-02-17"
+    const val modelDirName = "zipformer-en-2023-06-26"
 
     private const val BASE =
-        "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17/resolve/main"
+        "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main"
+
+    private const val ENCODER = "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+    private const val DECODER = "decoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+    private const val JOINER = "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
 
     val files = listOf(
         AsrModelFile(
-            name = "encoder-epoch-99-avg-1.int8.onnx",
-            url = "$BASE/encoder-epoch-99-avg-1.int8.onnx",
-            sha256 = "3810755ce7c3ab26b42a8bcf39d191308fa27fb0f53358823ba46141d03b7eb3",
-            sizeBytes = 42_845_182L,
+            name = ENCODER,
+            url = "$BASE/$ENCODER",
+            sha256 = "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+            sizeBytes = 71_083_163L,
         ),
         AsrModelFile(
-            name = "decoder-epoch-99-avg-1.int8.onnx",
-            url = "$BASE/decoder-epoch-99-avg-1.int8.onnx",
-            sha256 = "21e2a2acd961b3ac72f55be2f10f1a285e1b0b0ba010d7c0b6eab141411b163c",
-            sizeBytes = 539_499L,
+            name = DECODER,
+            url = "$BASE/$DECODER",
+            sha256 = "98da299f471e38bb4e1a8df579b8cc9122d6039576a77e357b3c60f17dd83b02",
+            sizeBytes = 1_307_236L,
         ),
         AsrModelFile(
-            name = "joiner-epoch-99-avg-1.int8.onnx",
-            url = "$BASE/joiner-epoch-99-avg-1.int8.onnx",
-            sha256 = "e085d73b593cf9b0707f370dbd656d58327d3fe36d80d849202ef81df02cb01e",
-            sizeBytes = 259_572L,
+            name = JOINER,
+            url = "$BASE/$JOINER",
+            sha256 = "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+            sizeBytes = 259_335L,
         ),
         AsrModelFile(
             name = "tokens.txt",
@@ -60,4 +64,8 @@ object AsrModelRegistry {
     )
 
     val totalBytes: Long = files.sumOf { it.sizeBytes }
+
+    val encoderName: String get() = ENCODER
+    val decoderName: String get() = DECODER
+    val joinerName: String get() = JOINER
 }

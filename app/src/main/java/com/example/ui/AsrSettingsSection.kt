@@ -71,7 +71,7 @@ fun AsrSettingsSection(
                     border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.3f)),
                 ) {
                     Text(
-                        text = "OFFLINE · ENGLISH · 42 MB MODEL",
+                        text = "OFFLINE · ENGLISH · 73 MB MODEL",
                         color = CyberGreen,
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
@@ -178,6 +178,6 @@ private fun DownloadButton(onDownload: () -> Unit) {
     ) {
         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp))
         Spacer(modifier = Modifier.width(6.dp))
-        Text("Download model (42 MB)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text("Download model (73 MB)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }

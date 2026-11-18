@@ -1,5 +1,6 @@
 package com.example.asr
 
+import android.util.Log
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
@@ -18,16 +19,32 @@ import kotlin.math.roundToLong
 class SherpaSpeechRecognizer(
     modelDir: File,
     numThreads: Int = 2,
+    hotwords: String = "",
 ) : SpeechRecognizerEngine {
 
     private val recognizer: OnlineRecognizer
+    private val streamHotwords: String
 
     init {
+        var used = hotwords
+        var created: OnlineRecognizer? = null
+        if (used.isNotEmpty()) {
+            created = runCatching { buildRecognizer(modelDir, numThreads, used) }
+                .onFailure { Log.w("SherpaRecognizer", "Hotwords rejected; continuing without", it) }
+                .getOrNull()
+            if (created == null) used = ""
+        }
+        if (created == null) created = buildRecognizer(modelDir, numThreads, used)
+        recognizer = created
+        streamHotwords = used
+    }
+
+    private fun buildRecognizer(modelDir: File, numThreads: Int, hotwords: String): OnlineRecognizer {
         val modelConfig = OnlineModelConfig(
             transducer = OnlineTransducerModelConfig(
-                encoder = File(modelDir, "encoder-epoch-99-avg-1.int8.onnx").absolutePath,
-                decoder = File(modelDir, "decoder-epoch-99-avg-1.int8.onnx").absolutePath,
-                joiner = File(modelDir, "joiner-epoch-99-avg-1.int8.onnx").absolutePath,
+                encoder = File(modelDir, AsrModelRegistry.encoderName).absolutePath,
+                decoder = File(modelDir, AsrModelRegistry.decoderName).absolutePath,
+                joiner = File(modelDir, AsrModelRegistry.joinerName).absolutePath,
             ),
             tokens = File(modelDir, "tokens.txt").absolutePath,
             numThreads = numThreads,
@@ -40,11 +57,13 @@ class SherpaSpeechRecognizer(
             modelConfig = modelConfig,
             enableEndpoint = true,
             decodingMethod = "greedy_search",
+            hotwordsScore = HOTWORDS_SCORE,
         )
-        recognizer = OnlineRecognizer(assetManager = null, config = config)
+        return OnlineRecognizer(assetManager = null, config = config)
     }
 
-    override fun startStream(startMs: Long): SpeechStream = SherpaStream(recognizer, startMs)
+    override fun startStream(startMs: Long): SpeechStream =
+        SherpaStream(recognizer, startMs, streamHotwords)
 
     override fun close() {
         recognizer.release()
@@ -53,8 +72,9 @@ class SherpaSpeechRecognizer(
     private class SherpaStream(
         private val recognizer: OnlineRecognizer,
         private val initialStartMs: Long,
+        private val hotwords: String,
     ) : SpeechStream {
-        private val stream: OnlineStream = recognizer.createStream()
+        private val stream: OnlineStream = recognizer.createStream(hotwords = hotwords)
         private val pending = mutableListOf<AsrSegment>()
         private var audioSamples = 0L
         private var streamStartMs = initialStartMs
@@ -137,5 +157,6 @@ class SherpaSpeechRecognizer(
     private companion object {
         const val SAMPLE_RATE = 16_000
         const val TAIL_PADDING_SAMPLES = 12_800 // 0.8 s
+        const val HOTWORDS_SCORE = 1.6f
     }
 }

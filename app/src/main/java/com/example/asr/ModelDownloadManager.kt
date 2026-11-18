@@ -129,6 +129,18 @@ class ModelDownloadManager internal constructor(
         installedCache = false
     }
 
+    /** Removes model directories left behind by earlier pinned versions. */
+    fun deleteLegacy() {
+        rootDir.listFiles()?.forEach { entry ->
+            if (entry.isDirectory &&
+                entry.name.startsWith("zipformer-") &&
+                entry.name != AsrModelRegistry.modelDirName
+            ) {
+                entry.deleteRecursively()
+            }
+        }
+    }
+
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->

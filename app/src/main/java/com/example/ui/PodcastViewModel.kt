@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.asr.AdCueDetector
+import com.example.asr.Hotwords
 import com.example.asr.AdScanController
 import com.example.asr.AdSlotLearner
 import com.example.asr.AdSlotPredictor
@@ -59,7 +60,13 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private val adScanController = AdScanController(
         store = adScanStore,
         engine = LazySpeechRecognizerEngine {
-            SherpaSpeechRecognizer(modelDownloadManager.modelDir())
+            SherpaSpeechRecognizer(
+                modelDir = modelDownloadManager.modelDir(),
+                hotwords = Hotwords.build(
+                    brands = AdCueDetector.DEFAULT_BRANDS,
+                    cues = AdCueDetector.DEFAULT_START_PHRASES,
+                ),
+            )
         },
         pcmSources = MediaPcmSourceFactory(application, application.cacheDir),
         cueDetector = AdCueDetector(),
@@ -843,6 +850,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private var lastPauseTimestamp: Long = 0L
 
     init {
+        viewModelScope.launch(Dispatchers.IO) { modelDownloadManager.deleteLegacy() }
         viewModelScope.launch {
             adScanController.currentAds.collect { _currentAdSegments.value = it }
         }

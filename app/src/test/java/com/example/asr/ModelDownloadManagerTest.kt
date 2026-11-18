@@ -62,4 +62,37 @@ class ModelDownloadManagerTest {
             server.shutdown()
         }
     }
+
+    @Test
+    fun `deleteLegacy removes old model dirs and keeps the current one`() {
+        val root = tempDir()
+        File(root, "zipformer-en-20m-2023-02-17").mkdirs()
+        File(root, AsrModelRegistry.modelDirName).mkdirs()
+        val manager = ModelDownloadManager(root, emptyList())
+
+        manager.deleteLegacy()
+
+        assertFalse(File(root, "zipformer-en-20m-2023-02-17").exists())
+        assertTrue(File(root, AsrModelRegistry.modelDirName).exists())
+    }
+
+    @Test
+    fun `a server error leaves no partial files and isInstalled stays false`() = runTest {
+        val server = MockWebServer().apply {
+            enqueue(MockResponse().setResponseCode(500))
+            start()
+        }
+        try {
+            val manager = ModelDownloadManager(
+                tempDir(),
+                listOf(file.copy(url = server.url("/a.bin").toString())),
+            )
+
+            assertTrue(manager.download {}.isFailure)
+            assertFalse(manager.isInstalled())
+            assertEquals(emptyList<String>(), manager.modelDir().listFiles().orEmpty().map { it.name })
+        } finally {
+            server.shutdown()
+        }
+    }
 }
