@@ -24,6 +24,10 @@ class RoomAdScanStore(private val dao: AdDao) : AdScanStore {
     override suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity> =
         dao.adSegments(episodeId)
 
+    override suspend fun adSegment(id: String): EpisodeAdSegmentEntity? = dao.adSegment(id)
+
+    override suspend fun deleteAdSegment(id: String) = dao.deleteAdSegment(id)
+
     override suspend fun replaceAdSegments(
         episodeId: String,
         segments: List<EpisodeAdSegmentEntity>,

@@ -14,6 +14,8 @@ interface AdScanStore {
     suspend fun asrSegments(episodeId: String): List<EpisodeAsrSegmentEntity>
     suspend fun upsertAsrSegments(segments: List<EpisodeAsrSegmentEntity>)
     suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity>
+    suspend fun adSegment(id: String): EpisodeAdSegmentEntity?
+    suspend fun deleteAdSegment(id: String)
     suspend fun replaceAdSegments(episodeId: String, segments: List<EpisodeAdSegmentEntity>)
     suspend fun saveTranscriptProjection(episodeId: String, text: String)
     suspend fun saveEpisodeDuration(episodeId: String, seconds: Long)

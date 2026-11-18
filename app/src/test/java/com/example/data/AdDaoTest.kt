@@ -55,4 +55,18 @@ class AdDaoTest {
         assertEquals(ranges, CoverageCodec.decode(CoverageCodec.encode(ranges)))
         assertTrue(CoverageCodec.decode("").isEmpty())
     }
+
+    @Test
+    fun `stores and deletes a single ad segment by id`() = runBlocking {
+        dao.upsertAdSegments(
+            listOf(
+                EpisodeAdSegmentEntity(
+                    "e:1000:2000", "e", "p", 1_000, 2_000, "Manual mark", 1f, "USER", true, 1,
+                )
+            )
+        )
+        assertEquals("e:1000:2000", dao.adSegment("e:1000:2000")?.id)
+        dao.deleteAdSegment("e:1000:2000")
+        assertEquals(null, dao.adSegment("e:1000:2000"))
+    }
 }

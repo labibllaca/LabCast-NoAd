@@ -45,6 +45,15 @@ class FakeStore : AdScanStore {
     override suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity> =
         adsByEpisode[episodeId].orEmpty()
 
+    override suspend fun adSegment(id: String): EpisodeAdSegmentEntity? =
+        adsByEpisode.values.flatten().firstOrNull { it.id == id }
+
+    override suspend fun deleteAdSegment(id: String) {
+        adsByEpisode.keys.toList().forEach { episodeId ->
+            adsByEpisode[episodeId] = adsByEpisode[episodeId].orEmpty().filterNot { it.id == id }
+        }
+    }
+
     override suspend fun replaceAdSegments(
         episodeId: String,
         segments: List<EpisodeAdSegmentEntity>,

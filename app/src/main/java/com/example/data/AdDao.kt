@@ -23,6 +23,12 @@ interface AdDao {
     @Query("SELECT * FROM episode_ad_segments WHERE episodeId = :episodeId ORDER BY startMs")
     suspend fun adSegments(episodeId: String): List<EpisodeAdSegmentEntity>
 
+    @Query("SELECT * FROM episode_ad_segments WHERE id = :id")
+    suspend fun adSegment(id: String): EpisodeAdSegmentEntity?
+
+    @Query("DELETE FROM episode_ad_segments WHERE id = :id")
+    suspend fun deleteAdSegment(id: String)
+
     @Query(
         "SELECT * FROM episode_ad_segments " +
             "WHERE episodeId = :episodeId AND startMs < :endMs AND endMs > :startMs ORDER BY startMs"
