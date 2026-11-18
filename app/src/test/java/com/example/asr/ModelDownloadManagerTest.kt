@@ -66,13 +66,13 @@ class ModelDownloadManagerTest {
     @Test
     fun `deleteLegacy removes old model dirs and keeps the current one`() {
         val root = tempDir()
-        File(root, "zipformer-en-20m-2023-02-17").mkdirs()
+        File(root, "zipformer-en-20m-legacy").mkdirs()
         File(root, AsrModelRegistry.modelDirName).mkdirs()
         val manager = ModelDownloadManager(root, emptyList())
 
         manager.deleteLegacy()
 
-        assertFalse(File(root, "zipformer-en-20m-2023-02-17").exists())
+        assertFalse(File(root, "zipformer-en-20m-legacy").exists())
         assertTrue(File(root, AsrModelRegistry.modelDirName).exists())
     }
 
