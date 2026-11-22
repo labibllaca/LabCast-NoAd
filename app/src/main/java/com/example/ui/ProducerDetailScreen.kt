@@ -104,11 +104,10 @@ fun ProducerDetailScreen(
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
+                    AppLabel(
                         text = "Back",
                         color = CyberGreen,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
+                        style = MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     )
                 }
 
@@ -194,11 +193,10 @@ fun ProducerDetailScreen(
 
                             Spacer(modifier = Modifier.height(4.dp))
 
-                            Text(
+                            AppHeading(
                                 text = producer.name,
                                 color = colors.textPrimary,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black,
+                                style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, fontWeight = FontWeight.Black),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -224,11 +222,10 @@ fun ProducerDetailScreen(
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = "${producer.shows.size}",
                                 color = CyberGreen,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Black
+                                style = MaterialTheme.typography.displaySmall.copy(fontSize = 18.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Shows Produced",
@@ -238,11 +235,10 @@ fun ProducerDetailScreen(
                         }
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = "${if (producerEpisodes.isNotEmpty()) producerEpisodes.size else producer.totalEpisodesCount}",
                                 color = colors.textPrimary,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Black
+                                style = MaterialTheme.typography.displaySmall.copy(fontSize = 18.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Episodes Produced",
@@ -252,11 +248,10 @@ fun ProducerDetailScreen(
                         }
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = "Ad-Skipper",
                                 color = AdGold,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Black
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Ready",

@@ -23,14 +23,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.AppHeading
+import com.example.ui.theme.AppLabel
 import com.example.ui.theme.CyberGreen
 import com.example.ui.theme.ErrorRed
+import com.example.ui.theme.Lato
 import com.example.ui.theme.LocalCustomColors
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,11 +94,10 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
-                        Text(
+                        AppHeading(
                             text = AppLanguage.settingsTitle(isAlbanianLanguage),
                             color = colors.textPrimary,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         )
                         Text(
                             text = AppLanguage.settingsSubtitle(isAlbanianLanguage),
@@ -214,11 +215,13 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
+                        AppHeading(
                             text = "Erscheinungsbild & Theme",
                             color = colors.textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
                         )
                     }
 
@@ -292,11 +295,13 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
+                            AppHeading(
                                 text = "GitHub Updates & Releases",
                                 color = colors.textPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
                             )
                         }
 
@@ -1432,7 +1437,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                                         color = badgeColor,
                                                         fontSize = 10.sp,
                                                         fontWeight = FontWeight.Bold,
-                                                        fontFamily = FontFamily.Monospace,
+                                                        fontFamily = Lato,
                                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                                     )
                                                 }
@@ -1441,7 +1446,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                                 text = dateStr,
                                                 color = colors.textMuted,
                                                 fontSize = 10.sp,
-                                                fontFamily = FontFamily.Monospace
+                                                fontFamily = Lato
                                             )
                                         }
                                         Spacer(modifier = Modifier.height(4.dp))
@@ -1449,7 +1454,7 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                                             text = log.action,
                                             color = colors.textPrimary,
                                             fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
+                                            fontFamily = Lato,
                                             lineHeight = 15.sp
                                         )
                                     }
@@ -1561,11 +1566,13 @@ fun ThemeOptionChip(
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
+            AppLabel(
                 text = title,
                 color = if (isSelected) CyberGreen else colors.textPrimary,
-                fontSize = 12.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = 12.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                )
             )
             Text(
                 text = subtitle,

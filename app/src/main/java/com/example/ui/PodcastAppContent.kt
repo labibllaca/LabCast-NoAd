@@ -5,78 +5,73 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import com.example.R
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.shape.CircleShape
 import com.example.data.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.CloudDownload
-import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.HourglassEmpty
-import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.key.*
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
-import coil.compose.SubcomposeAsyncImage
-import coil.request.ImageRequest
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.draw.alpha
+import com.example.ui.theme.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.HourglassEmpty
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import com.example.data.EpisodeEntity
+import com.example.data.PodcastEntity
+import com.example.network.PodcastSource
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.WifiOff
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
-import androidx.compose.ui.input.pointer.pointerInput
-import com.example.data.EpisodeEntity
-import com.example.data.PodcastEntity
-import com.example.data.SyncLogEntity
-import com.example.network.PodcastSource
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.example.network.SearchResultPodcast
-import com.example.ui.theme.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.verticalScroll
 
 @Composable
 fun SmartPodcastImage(
@@ -207,6 +202,370 @@ fun PodcastPlaceholderArt(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+}
+
+// ==========================================
+// EPISODE LIST ITEM (UNIVERSAL COMPONENT)
+// ==========================================
+@Composable
+fun EpisodeListItem(
+    episode: EpisodeEntity,
+    viewModel: PodcastViewModel,
+    isMultiSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: (() -> Unit)? = null,
+    onPlayClick: () -> Unit
+) {
+    val colors = LocalCustomColors.current
+    val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
+    val isDownloading = downloadProgressMap.containsKey(episode.id)
+    val downloadProgress = downloadProgressMap[episode.id] ?: 0f
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) CyberGreen.copy(alpha = 0.08f) else colors.cardBackground
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (isSelected) CyberGreen else colors.itemBorder,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable {
+                if (isMultiSelectMode && onToggleSelect != null) {
+                    onToggleSelect()
+                } else {
+                    onPlayClick()
+                }
+            }
+            .testTag("episode_item_${episode.id}"),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                // Multi-Select Checkbox if in multi-select mode
+                if (isMultiSelectMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelect?.invoke() },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = CyberGreen,
+                            checkmarkColor = ObsidianBlack,
+                            uncheckedColor = colors.textMuted
+                        ),
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .testTag("checkbox_episode_${episode.id}")
+                    )
+                }
+
+                // Cover art or decorative background
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.itemBorder)
+                ) {
+                    SmartPodcastImage(
+                        imageUrl = episode.podcastCoverUrl,
+                        contentDescription = episode.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = episode.title,
+                        color = colors.textPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${episode.podcastTitle} • ${episode.publishDate}",
+                        color = colors.textMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = episode.description,
+                color = colors.textMuted,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 15.sp
+            )
+
+            // Micro progress bar if user has listened partially
+            if (episode.playbackPositionMs > 0 && !episode.isCompleted) {
+                val progressFraction = episode.playbackPositionMs.toFloat() / (episode.durationSeconds * 1000f)
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = { progressFraction.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(2.dp),
+                    color = CyberGreen,
+                    trackColor = colors.itemBorder
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Action row inside item
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Play button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable { onPlayClick() }
+                        .background(CyberGreen.copy(alpha = 0.15f), CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("play_button_${episode.id}")
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (episode.playbackPositionMs > 0) "Resume" else "Play",
+                        color = CyberGreen,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Duration text
+                    Text(
+                        text = viewModel.formatDuration(episode.durationSeconds),
+                        color = colors.textMuted,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+
+                    // Favorite Button
+                    IconButton(
+                        onClick = { viewModel.toggleFavorite(episode) },
+                        modifier = Modifier.size(32.dp).testTag("fav_button_${episode.id}")
+                    ) {
+                        Icon(
+                            if (episode.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = "Favorite",
+                            tint = if (episode.isFavorite) ErrorRed else colors.textMuted,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Download Button
+                    if (episode.isDownloaded) {
+                        IconButton(
+                            onClick = { viewModel.deleteDownload(episode) },
+                            modifier = Modifier.size(32.dp).testTag("delete_download_${episode.id}")
+                        ) {
+                            Icon(
+                                Icons.Default.OfflinePin,
+                                contentDescription = "Downloaded Offline",
+                                tint = CyberGreen,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    } else if (isDownloading) {
+                        CircularProgressIndicator(
+                            progress = { downloadProgress },
+                            color = CyberGreen,
+                            strokeWidth = 2.dp,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .padding(2.dp)
+                        )
+                    } else {
+                        IconButton(
+                            onClick = { viewModel.downloadEpisode(episode) },
+                            modifier = Modifier.size(32.dp).testTag("download_button_${episode.id}")
+                        ) {
+                            Icon(
+                                Icons.Default.CloudDownload,
+                                contentDescription = "Download Offline",
+                                tint = colors.textMuted,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
+// SEARCH RESULT CARD (EXTERNAL DIRECTORIES)
+// ==========================================
+@Composable
+fun SearchResultCard(
+    result: SearchResultPodcast,
+    isSubscribed: Boolean,
+    onSubscribeClick: () -> Unit,
+    onCardClick: () -> Unit,
+    onProducerClick: (() -> Unit)? = null
+) {
+    val colors = LocalCustomColors.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, colors.itemBorder, RoundedCornerShape(12.dp))
+            .clickable { onCardClick() }
+            .testTag("search_result_${result.id}"),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.itemBorder)
+            ) {
+                SmartPodcastImage(
+                    imageUrl = result.coverUrl,
+                    contentDescription = result.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(CyberGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = result.source.displayName,
+                            color = CyberGreen,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = result.category,
+                        color = colors.textMuted,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = result.title,
+                    color = colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Interactive Producer / Artist Pill
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clickable(enabled = onProducerClick != null) { onProducerClick?.invoke() }
+                        .background(CyberGreen.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .testTag("producer_pill_${result.id}")
+                ) {
+                    Icon(
+                        Icons.Default.RecordVoiceOver,
+                        contentDescription = "Producer",
+                        tint = CyberGreen,
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Producer: ${result.author}",
+                        color = CyberGreen,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = CyberGreen,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+
+                if (result.trackCount > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${result.trackCount} episodes",
+                        color = colors.textMuted,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Button(
+                onClick = { onSubscribeClick() },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isSubscribed) colors.itemBorder else CyberGreen,
+                    contentColor = if (isSubscribed) colors.textPrimary else ObsidianBlack
+                ),
+                shape = RoundedCornerShape(16.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier
+                    .height(32.dp)
+                    .testTag("subscribe_result_${result.id}")
+            ) {
+                Icon(
+                    if (isSubscribed) Icons.Default.Check else Icons.Default.Add,
+                    contentDescription = null,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (isSubscribed) "Subscribed" else "Subscribe",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }
@@ -541,12 +900,14 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text(
+                        AppHeading(
                             text = "LABCAST",
                             color = CyberGreen,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp
+                            style = Typography.titleLarge.copy(
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 2.sp
+                            )
                         )
                         Text(
                             text = "Audio Sanctuary • Ad-Skipper Active",
@@ -1044,11 +1405,10 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                Text(
+                                AppHeading(
                                     text = adsBlockedCount.toString(),
                                     color = CyberGreen,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Black
+                                    style = Typography.displaySmall.copy(fontSize = 24.sp, fontWeight = FontWeight.Black)
                                 )
                                 Text(
                                     text = "Sponsors Skipped",
@@ -1064,11 +1424,10 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
                                     .background(BorderGray)
                             )
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                Text(
+                                AppHeading(
                                     text = "${savedMinutes}m",
                                     color = AdGold,
-                                    fontSize = 24.sp,
-                                    fontWeight = FontWeight.Black
+                                    style = Typography.displaySmall.copy(fontSize = 24.sp, fontWeight = FontWeight.Black)
                                 )
                                 Text(
                                     text = "Listen Time Saved",
@@ -1295,11 +1654,10 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
+                        AppHeading(
                             text = podcast.title.take(2).uppercase(),
                             color = TextWhite,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 24.sp
+                            style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, fontSize = 24.sp)
                         )
                     }
                 }
@@ -1345,6 +1703,7 @@ fun PodcastGridItem(podcast: PodcastEntity, onClick: () -> Unit) {
 // ==========================================
 // PODCAST DETAIL SCREEN
 // ==========================================
+
 enum class EpisodeSortOrder(val displayName: String) {
     NEWEST("Newest First"),
     OLDEST("Oldest First"),
@@ -1424,7 +1783,11 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Back to Discover", color = CyberGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        AppLabel(
+                            "Back to Discover",
+                            color = CyberGreen,
+                            style = Typography.labelLarge.copy(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        )
                     }
 
                     // Top Refresh Action Icon
@@ -1510,11 +1873,10 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
                 Spacer(modifier = Modifier.width(16.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
+                    AppHeading(
                         text = podcast.title,
                         color = TextWhite,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 20.sp
+                        style = Typography.titleLarge.copy(fontWeight = FontWeight.Black, fontSize = 20.sp)
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(
@@ -1881,11 +2243,10 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
     ) {
         item {
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
+            AppHeading(
                 text = "Offline Sanctuary",
                 color = TextWhite,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black
+                style = Typography.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Black)
             )
             Text(
                 text = "Media saved directly to sandbox storage for playback anywhere.",
@@ -2276,11 +2637,10 @@ fun VerlaufScreen(viewModel: PodcastViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
+                    AppHeading(
                         text = "Verlauf",
                         color = TextWhite,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Black
+                        style = Typography.titleLarge.copy(fontSize = 24.sp, fontWeight = FontWeight.Black)
                     )
                     Text(
                         text = "Übersicht deiner bisher angehörten Folgen & Fortschritt",
@@ -2324,11 +2684,10 @@ fun VerlaufScreen(viewModel: PodcastViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = "${historyEpisodes.size}",
                                 color = CyberGreen,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black
+                                style = Typography.displaySmall.copy(fontSize = 20.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Angehört",
@@ -2346,11 +2705,10 @@ fun VerlaufScreen(viewModel: PodcastViewModel) {
                         )
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = if (totalHours > 0) "${totalHours}h ${totalMins}m" else "${totalMins}m",
                                 color = TextWhite,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black
+                                style = Typography.displaySmall.copy(fontSize = 20.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Hördauer",
@@ -2368,11 +2726,10 @@ fun VerlaufScreen(viewModel: PodcastViewModel) {
                         )
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
+                            AppHeading(
                                 text = "$completedCount",
                                 color = AdGold,
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Black
+                                style = Typography.displaySmall.copy(fontSize = 20.sp, fontWeight = FontWeight.Black)
                             )
                             Text(
                                 text = "Beendet",
@@ -2722,370 +3079,6 @@ fun VerlaufEpisodeCard(
                         modifier = Modifier.size(16.dp)
                     )
                 }
-            }
-        }
-    }
-}
-
-// ==========================================
-// EPISODE LIST ITEM (UNIVERSAL COMPONENT)
-// ==========================================
-@Composable
-fun EpisodeListItem(
-    episode: EpisodeEntity,
-    viewModel: PodcastViewModel,
-    isMultiSelectMode: Boolean = false,
-    isSelected: Boolean = false,
-    onToggleSelect: (() -> Unit)? = null,
-    onPlayClick: () -> Unit
-) {
-    val colors = LocalCustomColors.current
-    val downloadProgressMap by viewModel.downloadProgressMap.collectAsStateWithLifecycle()
-    val isDownloading = downloadProgressMap.containsKey(episode.id)
-    val downloadProgress = downloadProgressMap[episode.id] ?: 0f
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) CyberGreen.copy(alpha = 0.08f) else colors.cardBackground
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(
-                1.dp,
-                if (isSelected) CyberGreen else colors.itemBorder,
-                RoundedCornerShape(12.dp)
-            )
-            .clickable {
-                if (isMultiSelectMode && onToggleSelect != null) {
-                    onToggleSelect()
-                } else {
-                    onPlayClick()
-                }
-            }
-            .testTag("episode_item_${episode.id}"),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
-            ) {
-                // Multi-Select Checkbox if in multi-select mode
-                if (isMultiSelectMode) {
-                    Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = { onToggleSelect?.invoke() },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = CyberGreen,
-                            checkmarkColor = ObsidianBlack,
-                            uncheckedColor = colors.textMuted
-                        ),
-                        modifier = Modifier
-                            .padding(end = 6.dp)
-                            .testTag("checkbox_episode_${episode.id}")
-                    )
-                }
-
-                // Cover art or decorative background
-                Box(
-                    modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colors.itemBorder)
-                ) {
-                    SmartPodcastImage(
-                        imageUrl = episode.podcastCoverUrl,
-                        contentDescription = episode.title,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = episode.title,
-                        color = colors.textPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${episode.podcastTitle} • ${episode.publishDate}",
-                        color = colors.textMuted,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = episode.description,
-                color = colors.textMuted,
-                fontSize = 11.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 15.sp
-            )
-
-            // Micro progress bar if user has listened partially
-            if (episode.playbackPositionMs > 0 && !episode.isCompleted) {
-                val progressFraction = episode.playbackPositionMs.toFloat() / (episode.durationSeconds * 1000f)
-                Spacer(modifier = Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { progressFraction.coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth().height(2.dp),
-                    color = CyberGreen,
-                    trackColor = colors.itemBorder
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Action row inside item
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Play button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { onPlayClick() }
-                        .background(CyberGreen.copy(alpha = 0.15f), CircleShape)
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                        .testTag("play_button_${episode.id}")
-                ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        tint = CyberGreen,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (episode.playbackPositionMs > 0) "Resume" else "Play",
-                        color = CyberGreen,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Duration text
-                    Text(
-                        text = viewModel.formatDuration(episode.durationSeconds),
-                        color = colors.textMuted,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-
-                    // Favorite Button
-                    IconButton(
-                        onClick = { viewModel.toggleFavorite(episode) },
-                        modifier = Modifier.size(32.dp).testTag("fav_button_${episode.id}")
-                    ) {
-                        Icon(
-                            if (episode.isFavorite) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                            contentDescription = "Favorite",
-                            tint = if (episode.isFavorite) ErrorRed else colors.textMuted,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    // Download Button
-                    if (episode.isDownloaded) {
-                        IconButton(
-                            onClick = { viewModel.deleteDownload(episode) },
-                            modifier = Modifier.size(32.dp).testTag("delete_download_${episode.id}")
-                        ) {
-                            Icon(
-                                Icons.Default.OfflinePin,
-                                contentDescription = "Downloaded Offline",
-                                tint = CyberGreen,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else if (isDownloading) {
-                        CircularProgressIndicator(
-                            progress = { downloadProgress },
-                            color = CyberGreen,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .padding(2.dp)
-                        )
-                    } else {
-                        IconButton(
-                            onClick = { viewModel.downloadEpisode(episode) },
-                            modifier = Modifier.size(32.dp).testTag("download_button_${episode.id}")
-                        ) {
-                            Icon(
-                                Icons.Default.CloudDownload,
-                                contentDescription = "Download Offline",
-                                tint = colors.textMuted,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ==========================================
-// SEARCH RESULT CARD (EXTERNAL DIRECTORIES)
-// ==========================================
-@Composable
-fun SearchResultCard(
-    result: SearchResultPodcast,
-    isSubscribed: Boolean,
-    onSubscribeClick: () -> Unit,
-    onCardClick: () -> Unit,
-    onProducerClick: (() -> Unit)? = null
-) {
-    val colors = LocalCustomColors.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = colors.cardBackground),
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, colors.itemBorder, RoundedCornerShape(12.dp))
-            .clickable { onCardClick() }
-            .testTag("search_result_${result.id}"),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(colors.itemBorder)
-            ) {
-                SmartPodcastImage(
-                    imageUrl = result.coverUrl,
-                    contentDescription = result.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .background(CyberGreen.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = result.source.displayName,
-                            color = CyberGreen,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = result.category,
-                        color = colors.textMuted,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                Text(
-                    text = result.title,
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                // Interactive Producer / Artist Pill
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable(enabled = onProducerClick != null) { onProducerClick?.invoke() }
-                        .background(CyberGreen.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                        .testTag("producer_pill_${result.id}")
-                ) {
-                    Icon(
-                        Icons.Default.RecordVoiceOver,
-                        contentDescription = "Producer",
-                        tint = CyberGreen,
-                        modifier = Modifier.size(11.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Producer: ${result.author}",
-                        color = CyberGreen,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = CyberGreen,
-                        modifier = Modifier.size(11.dp)
-                    )
-                }
-
-                if (result.trackCount > 0) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${result.trackCount} episodes",
-                        color = colors.textMuted,
-                        fontSize = 10.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Button(
-                onClick = { onSubscribeClick() },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isSubscribed) colors.itemBorder else CyberGreen,
-                    contentColor = if (isSubscribed) colors.textPrimary else ObsidianBlack
-                ),
-                shape = RoundedCornerShape(16.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier
-                    .height(32.dp)
-                    .testTag("subscribe_result_${result.id}")
-            ) {
-                Icon(
-                    if (isSubscribed) Icons.Default.Check else Icons.Default.Add,
-                    contentDescription = null,
-                    modifier = Modifier.size(13.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = if (isSubscribed) "Subscribed" else "Subscribe",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }
@@ -3772,11 +3765,10 @@ fun FullPlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
+                AppHeading(
                     text = episode!!.title,
                     color = colors.textPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
+                    style = Typography.titleLarge.copy(fontSize = 18.sp, fontWeight = FontWeight.Black),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
@@ -5627,7 +5619,7 @@ fun SleepTimerBottomSheet(
                             color = colors.textPrimary,
                             fontSize = 38.sp,
                             fontWeight = FontWeight.Black,
-                            fontFamily = FontFamily.Monospace,
+                            fontFamily = Lexend,
                             letterSpacing = 2.sp
                         )
 
