@@ -85,30 +85,5 @@ object VozModelManager {
         }
     }
 
-    /**
-     * Generates synthesized speech PCM audio data for podcast segments or ad replacement using Voz ONNX.
-     */
-    fun generateSpeechWithVoz(text: String, context: Context): ByteArray? {
-        loadVozModel(context)
-        val textBytes = text.toByteArray(Charsets.UTF_8)
-        // Convert text tokens into float buffer
-        val tokens = textBytes.map { it.toFloat() }.toFloatArray()
-        val shape = longArrayOf(1, tokens.size.toLong())
-
-        val onnxOutput = runOnnxInference(tokens, shape)
-        return if (onnxOutput != null) {
-            // Convert float PCM to 16-bit PCM bytes
-            val pcmBytes = ByteArray(onnxOutput.size * 2)
-            for (i in onnxOutput.indices) {
-                val sample = (onnxOutput[i] * 32767f).toInt().coerceIn(-32768, 32767).toShort()
-                pcmBytes[i * 2] = (sample.toInt() and 0xFF).toByte()
-                pcmBytes[i * 2 + 1] = ((sample.toInt() shr 8) and 0xFF).toByte()
-            }
-            pcmBytes
-        } else {
-            null
-        }
-    }
-
     fun isLoaded(): Boolean = isModelLoaded
 }

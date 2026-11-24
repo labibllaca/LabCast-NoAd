@@ -6,7 +6,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
 import com.example.network.PodcastApiClient
-import com.example.network.CuratedPodcastCatalog
 import com.example.network.PodcastSource
 import com.example.network.SearchResultPodcast
 import com.example.player.PodcastPlayerHub
@@ -66,28 +65,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     // Podcast Chapters State
     val currentChapters: StateFlow<List<PodcastChapter>> = _currentPlayingEpisode
         .map { ep ->
-            if (ep != null) {
-                val parsed = ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds)
-                if (parsed.isEmpty()) {
-                    // Fallback intelligent chapter generation with sponsor break if none found
-                    val dur = ep.durationSeconds.coerceAtLeast(300L)
-                    val sTime = (dur * 0.15).toLong().coerceAtLeast(60L)
-                    val mTime = (dur * 0.25).toLong().coerceAtLeast(180L)
-                    val dTime = (dur * 0.65).toLong().coerceAtLeast(360L)
-                    val wTime = (dur * 0.90).toLong().coerceAtLeast(480L)
-                    listOf(
-                        PodcastChapter(id = "c0", title = "Introduction & Cold Open", startTimeSeconds = 0, durationSeconds = sTime),
-                        PodcastChapter(id = "c1", title = "Sponsor: Featured Partner", startTimeSeconds = sTime, durationSeconds = mTime - sTime),
-                        PodcastChapter(id = "c2", title = "Core Topic & Deep Analysis", startTimeSeconds = mTime, durationSeconds = dTime - mTime),
-                        PodcastChapter(id = "c3", title = "Key Case Study & Insights", startTimeSeconds = dTime, durationSeconds = wTime - dTime),
-                        PodcastChapter(id = "c4", title = "Takeaways & Closing Remarks", startTimeSeconds = wTime, durationSeconds = dur - wTime)
-                    )
-                } else {
-                    parsed
-                }
-            } else {
-                emptyList()
-            }
+            if (ep != null) ChapterParser.parseChapters(ep.chapters, ep.description, ep.durationSeconds) else emptyList()
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -410,20 +388,6 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _upNextQueue.value = _upNextQueue.value.filter { it.id != episodeId }
     }
 
-    fun triggerTestError() {
-        viewModelScope.launch {
-            val sampleErrors = listOf(
-                "Netzwerk / Audio-Stream" to "Verbindungsabbruch: HTTP 504 Gateway Timeout beim Audio-Streaming",
-                "ExoPlayer Decoder" to "Puffer-Fehler: AudioTrack buffer underrun bei 44.1kHz AAC Stream",
-                "Download Manager" to "Speicherplatz-Warnung: Nur noch 85MB verfügbar auf internem Speicher",
-                "RSS Feed Parser" to "XML Parsing Warnung: Fehlendes Enclosure-Tag im Feed"
-            )
-            val selected = sampleErrors.random()
-            repository.addErrorLog(selected.first, selected.second)
-            _sponsorSkipEvent.value = "Test-Fehler protokolliert: ${selected.first}"
-        }
-    }
-
     private val adKeywordDictionary = listOf(
         "werbung", "werbepartner", "sponsor", "sponsorship", "sponsored by",
         "brought to you by", "discount code", "promo code", "promocode", "special offer",
@@ -436,7 +400,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _isSttScanning.value = !_isSttScanning.value
         if (_isSttScanning.value) {
             _sponsorSkipEvent.value = "Speech-to-Text STT Scanner Aktiviert"
-            scanSpeechTextForAds("This episode is sponsored by AG1 and BetterHelp. Use promo code PODCAST for a special discount offer.")
+            scanSpeechTextForAds("")
         } else {
             _sttMatchedKeywords.value = emptyList()
             _sttConfidenceScore.value = 0f
@@ -734,22 +698,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val q = query.trim().lowercase()
         val authorMap = linkedMapOf<String, MutableList<ProducerShowSummary>>()
 
-        // 1. Curated catalog shows
-        CuratedPodcastCatalog.items.forEach { item ->
-            val author = item.author.trim()
-            val show = ProducerShowSummary(
-                id = item.id,
-                title = item.title,
-                coverUrl = item.coverUrl,
-                feedUrl = item.feedUrl,
-                category = item.category,
-                trackCount = item.trackCount,
-                isSubscribed = localPodcasts.any { it.title.equals(item.title, ignoreCase = true) && it.isSubscribed }
-            )
-            authorMap.getOrPut(author) { mutableListOf() }.add(show)
-        }
-
-        // 2. Local podcasts
+        // 1. Local podcasts
         localPodcasts.forEach { pod ->
             val author = pod.author.trim()
             if (author.isNotBlank()) {
@@ -769,7 +718,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 3. Search results
+        // 2. Search results
         searchResults.forEach { res ->
             val author = res.author.trim()
             if (author.isNotBlank()) {
@@ -791,7 +740,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
         val allProducers = authorMap.map { (authorName, shows) ->
             val firstCover = shows.firstOrNull { it.coverUrl.isNotBlank() }?.coverUrl ?: ""
-            val totalTracks = shows.sumOf { if (it.trackCount > 0) it.trackCount else 6 }
+            val totalTracks = shows.sumOf { it.trackCount }
             val category = shows.firstOrNull()?.category ?: "Podcast Producer"
             val showNames = shows.map { it.title }.joinToString(", ")
             ProducerInfo(
@@ -1181,18 +1130,15 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 ?: allProducers.firstOrNull { it.name.contains(producerName, ignoreCase = true) || producerName.contains(it.name, ignoreCase = true) }
                 ?: run {
                     val localShows = repository.allPodcasts.first().filter { it.author.contains(producerName, ignoreCase = true) }
-                    val curatedShows = CuratedPodcastCatalog.items.filter { it.author.contains(producerName, ignoreCase = true) }
-                    val shows = (localShows.map {
+                    val shows = localShows.map {
                         ProducerShowSummary(it.id, it.title, it.coverUrl, it.feedUrl, it.category, isSubscribed = it.isSubscribed)
-                    } + curatedShows.map {
-                        ProducerShowSummary(it.id, it.title, it.coverUrl, it.feedUrl, it.category, trackCount = it.trackCount)
-                    }).distinctBy { it.title }
+                    }.distinctBy { it.title }
 
                     ProducerInfo(
                         name = producerName,
                         avatarUrl = fallbackCoverUrl ?: shows.firstOrNull()?.coverUrl ?: "",
                         shows = shows,
-                        totalEpisodesCount = shows.sumOf { if (it.trackCount > 0) it.trackCount else 6 },
+                        totalEpisodesCount = shows.sumOf { it.trackCount },
                         primaryCategory = shows.firstOrNull()?.category ?: "Podcast Producer",
                         bio = "Producer of ${shows.joinToString(", ") { it.title }}"
                     )
@@ -1253,26 +1199,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                                 )
                             }
                             collectedEpisodes.addAll(eps)
-                        } else {
-                            val fallback = CuratedPodcastCatalog.generateEpisodesForShow(show.title).map { fEp ->
-                                EpisodeEntity(
-                                    id = fEp.id,
-                                    podcastId = show.id,
-                                    podcastTitle = show.title,
-                                    podcastCoverUrl = show.coverUrl,
-                                    title = fEp.title,
-                                    description = fEp.description,
-                                    durationSeconds = fEp.durationSeconds,
-                                    publishDate = fEp.publishDate,
-                                    audioUrl = fEp.audioUrl,
-                                    adTimestampsSeconds = fEp.adTimestampsSeconds,
-                                    chapters = fEp.chapters,
-                                    transcript = fEp.transcript,
-                                    publishTimestamp = fEp.publishTimestamp
-                                )
-                            }
-                            collectedEpisodes.addAll(fallback)
                         }
+
                     }
                 }
 

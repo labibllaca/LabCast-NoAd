@@ -18,8 +18,8 @@ android {
     minSdk = 24
     targetSdk = 36
     // Bump versionCode and versionName for every change before committing.
-    versionCode = 33
-    versionName = "1.5.0"
+    versionCode = 34
+    versionName = "1.5.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

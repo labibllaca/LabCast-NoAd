@@ -1500,23 +1500,6 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                             Text("Kopieren", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
 
-                        // Write Test Error Log
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.triggerTestError()
-                                android.widget.Toast.makeText(context, "Test-Fehler protokolliert", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberGreen),
-                            border = BorderStroke(1.dp, CyberGreen.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                            modifier = Modifier.weight(1f).testTag("btn_test_log")
-                        ) {
-                            Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Fehler testen", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-
                         // Clear Logs
                         OutlinedButton(
                             onClick = {

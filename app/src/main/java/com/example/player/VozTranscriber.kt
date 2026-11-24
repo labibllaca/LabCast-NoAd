@@ -99,9 +99,9 @@ class VozTranscriber {
         val sentences = mutableListOf<SentenceSegment>()
         val skipRanges = mutableListOf<SkipRange>()
 
-        // 1. If transcript is empty or raw, perform Desert Ant Voz STT model synthesis to generate full transcript
+        // No synthesized transcript: without real transcript text there is nothing to detect.
         if (parsedSegments.isEmpty()) {
-            parsedSegments = generateVozSpeechTranscription(episode)
+            return VozTranscriptResult(episode.id, "Desert Ant Voz Tiny Offline STT", emptyList(), emptyList(), 0f)
         }
 
         // 2. High-precision sentence and sponsor extraction
@@ -153,19 +153,6 @@ class VozTranscriber {
             }
         }
 
-        if (currentSponsorStartMs != null) {
-            val fallbackEnd = (currentSponsorStartMs!! + 60000L).coerceAtMost(durationMs)
-            skipRanges.add(
-                SkipRange(
-                    id = "voz_skip_end_${currentSponsorStartMs}",
-                    startMs = currentSponsorStartMs!!,
-                    endMs = fallbackEnd,
-                    label = currentSponsorLabel ?: "Sponsor Ad",
-                    confidence = 0.90f
-                )
-            )
-        }
-
         // 3. Apply Show-Level Historical Ad Pattern Learning to find recurring pre-roll and mid-roll ad slots
         val template = patternEngine.learnShowAdPattern(episode.podcastId, showEpisodes)
         val predictedSkips = patternEngine.predictEpisodeAdSkips(episode, template)
@@ -191,84 +178,6 @@ class VozTranscriber {
         )
     }
 
-    /**
-     * Synthesizes a full sentence-level transcription using Desert Ant Voz STT model for episodes lacking text transcripts.
-     */
-    private fun generateVozSpeechTranscription(episode: EpisodeEntity): List<TranscriptSegment> {
-        val durSec = episode.durationSeconds.coerceAtLeast(180L)
-        val segments = mutableListOf<TranscriptSegment>()
-
-        val descLower = episode.description.lowercase(Locale.ROOT)
-        val matchedBrand = SPONSOR_BRANDS.firstOrNull { descLower.contains(it.lowercase(Locale.ROOT)) } ?: "Featured Partner"
-
-        // Pre-roll (0s to 75s)
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = 0L,
-                speaker = "Pre-Roll Sponsor ($matchedBrand)",
-                text = "This episode is sponsored by $matchedBrand. Support for today's show comes from $matchedBrand. Use promo code PODCAST for an exclusive discount.",
-                isSponsor = true,
-                sponsorBrand = matchedBrand
-            )
-        )
-
-        // Main content intro
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = 75L,
-                speaker = "Host",
-                text = "Welcome back to ${episode.podcastTitle}! In today's episode '${episode.title}', we dive deep into the key ideas and key takeaways.",
-                isSponsor = false
-            )
-        )
-
-        // Mid-roll 1 (~20% duration)
-        val midSec1 = (durSec * 0.20).toLong()
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = midSec1,
-                speaker = "Host",
-                text = "Before we continue, a quick word from our sponsor. Thanks to AG1 and BetterHelp for sponsoring this segment.",
-                isSponsor = true,
-                sponsorBrand = "AG1 / BetterHelp"
-            )
-        )
-
-        val midSec1Resume = midSec1 + 60L
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = midSec1Resume,
-                speaker = "Host",
-                text = "Now back to our discussion. Let's analyze the second main core topic of today's show.",
-                isSponsor = false
-            )
-        )
-
-        // Mid-roll 2 (~55% duration)
-        val midSec2 = (durSec * 0.55).toLong()
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = midSec2,
-                speaker = "Host",
-                text = "Commercial break: check out our special offer from Shopify and NordVPN. Use promo code LABCAST to save 20% off.",
-                isSponsor = true,
-                sponsorBrand = "Shopify"
-            )
-        )
-
-        val midSec2Resume = midSec2 + 60L
-        segments.add(
-            TranscriptSegment(
-                startTimeSeconds = midSec2Resume,
-                speaker = "Host",
-                text = "And welcome back to the podcast. Let's move on to the final summary and closing insights.",
-                isSponsor = false
-            )
-        )
-
-        return segments
-    }
-
     private fun generateWordTimestamps(text: String, startMs: Long, endMs: Long): List<WordTimestamp> {
         val words = text.split(Regex("""\s+""")).filter { it.isNotBlank() }
         if (words.isEmpty()) return emptyList()
@@ -290,17 +199,5 @@ class VozTranscriber {
         return VozModelManager.loadVozModel(context)
     }
 
-    /**
-     * Generates synthesized speech using Voz ONNX model for replacing ad segments with TTS.
-     */
-    fun replaceAdWithTTS(context: android.content.Context, adText: String): java.io.File? {
-        val pcmAudio = VozModelManager.generateSpeechWithVoz(adText, context) ?: return null
-        return try {
-            val tempFile = java.io.File.createTempFile("voz_tts_ad_", ".wav", context.cacheDir)
-            tempFile.writeBytes(pcmAudio)
-            tempFile
-        } catch (_: Exception) {
-            null
-        }
-    }
+
 }
