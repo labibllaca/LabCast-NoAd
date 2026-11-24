@@ -3499,6 +3499,7 @@ fun FullPlayerScreen(
     val savedMinutes by viewModel.savedMinutes.collectAsStateWithLifecycle()
 
     var showChaptersSheet by remember { mutableStateOf(false) }
+    var showManualMarksSheet by remember { mutableStateOf(false) }
     var showTranscriptSheet by remember { mutableStateOf(false) }
     var showDescriptionSheet by remember { mutableStateOf(false) }
     var showSleepTimerSheet by remember { mutableStateOf(false) }
@@ -3990,6 +3991,17 @@ fun FullPlayerScreen(
                                 }
                             }
                         }
+                        IconButton(
+                            onClick = { showManualMarksSheet = true },
+                            modifier = Modifier.testTag("manual_marks_button")
+                        ) {
+                            Icon(
+                                Icons.Default.Bookmarks,
+                                contentDescription = "Manual marks",
+                                tint = primaryAccent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -4393,6 +4405,18 @@ fun FullPlayerScreen(
                     )
                 }
             }
+        }
+
+        // Saved Manual Ad Marks Modal Bottom Sheet
+        if (showManualMarksSheet) {
+            ManualMarksBottomSheet(
+                ranges = ManualAdRangeCodec.decode(episode!!.manualAdRanges),
+                durationMs = durationMs.toLong(),
+                formatTime = { viewModel.formatDuration(it / 1000L) },
+                onNudge = { range, isStart, delta -> viewModel.nudgeManualAdRange(range, isStart, delta) },
+                onDelete = { range -> viewModel.deleteManualAdRange(range) },
+                onDismiss = { showManualMarksSheet = false }
+            )
         }
 
         // Chapters Modal Bottom Sheet
