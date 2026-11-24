@@ -200,6 +200,9 @@ object TranscriptParser {
         if (textSponsorTag) text = text.removePrefix("[Sponsor Break]").trim()
         val textUnmarkTag = text.startsWith(UNMARK_TOKEN)
         if (textUnmarkTag) text = text.removePrefix(UNMARK_TOKEN).trim()
+        while (text.startsWith("]") || text.startsWith("[")) {
+            text = text.drop(1).trim()
+        }
 
         val manuallyUnmarked = textUnmarkTag ||
             speaker.contains("LabCast:NotAd", ignoreCase = true)

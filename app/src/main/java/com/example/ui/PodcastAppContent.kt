@@ -4726,6 +4726,7 @@ fun TranscriptBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .wrapContentHeight()
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 36.dp)
         ) {
@@ -5177,31 +5178,34 @@ fun TranscriptBottomSheet(
                     }
                 } else {
                     val currentSec = playbackPositionMs / 1000
-                    LazyColumn(
+                    Column(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 440.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        items(filteredSegments) { segment ->
+                        filteredSegments.forEach { segment ->
                             val isCurrentLine = currentSec >= segment.startTimeSeconds &&
                                     currentSec < (segment.startTimeSeconds + 30)
                             val suggestion = suggestedAdChunks.find { it.segment.startTimeSeconds == segment.startTimeSeconds }
 
-                            Card(
-                                onClick = { onSegmentSelected(segment.startTimeSeconds * 1000L) },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = when {
-                                        segment.isSponsor -> AdGold.copy(alpha = if (colors.isDark) 0.12f else 0.09f)
-                                        suggestion != null -> Color(0xFFFFB74D).copy(alpha = if (colors.isDark) 0.08f else 0.14f)
-                                        isCurrentLine -> primaryAccent.copy(alpha = if (colors.isDark) 0.12f else 0.10f)
-                                        else -> if (colors.isDark) DarkCharcoal else LightCard
-                                    }
-                                ),
-                                shape = RoundedCornerShape(12.dp),
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .wrapContentHeight()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        when {
+                                            segment.isSponsor -> AdGold.copy(alpha = if (colors.isDark) 0.12f else 0.09f)
+                                            suggestion != null -> Color(0xFFFFB74D).copy(alpha = if (colors.isDark) 0.08f else 0.14f)
+                                            isCurrentLine -> primaryAccent.copy(alpha = if (colors.isDark) 0.12f else 0.10f)
+                                            else -> if (colors.isDark) DarkCharcoal else LightCard
+                                        }
+                                    )
+                                    .height(
+                                        (64 + (
+                                            (segment.text.length / 60 + 1).coerceIn(1, 6) * 17
+                                            )).dp
+                                    )
                                     .border(
                                         width = if (isCurrentLine || segment.isSponsor || suggestion != null) 2.dp else 1.5.dp,
                                         color = when {
@@ -5212,9 +5216,11 @@ fun TranscriptBottomSheet(
                                         },
                                         shape = RoundedCornerShape(12.dp)
                                     )
+                                    .clickable { onSegmentSelected(segment.startTimeSeconds * 1000L) }
+                                    .padding(12.dp)
                                     .testTag("transcript_item_${segment.startTimeSeconds}")
                             ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
+                                Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -5362,7 +5368,9 @@ fun TranscriptBottomSheet(
                                         text = segment.text,
                                         color = if (segment.isSponsor) colors.textPrimary else colors.textPrimary.copy(alpha = 0.9f),
                                         fontSize = 12.sp,
-                                        lineHeight = 17.sp
+                                        lineHeight = 17.sp,
+                                        maxLines = 6,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
