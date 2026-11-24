@@ -286,7 +286,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         _pendingManualAdStartMs.value = null
     }
 
-    private suspend fun syncManualAdRanges(episodeId: String, durationMs: Long) {
+    internal suspend fun syncManualAdRanges(episodeId: String, durationMs: Long) {
         val updatedEpisode = repository.getEpisodeById(episodeId) ?: return
         if (_currentPlayingEpisode.value?.id != episodeId) return
 
@@ -1627,6 +1627,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         _currentPlayingEpisode.value = currentEp
                     }
                 }
+
+                // An edit may have landed after the intervals above were computed. Republish
+                // manual skip intervals from the persisted ranges so auto-skip uses the latest bounds.
+                syncManualAdRanges(currentEp.id, currentEp.durationSeconds.coerceAtLeast(0L) * 1000L)
             } catch (e: Exception) {
                 Log.e("PodcastPlayer", "Metadata refresh afterwards error: ${e.message}", e)
             }

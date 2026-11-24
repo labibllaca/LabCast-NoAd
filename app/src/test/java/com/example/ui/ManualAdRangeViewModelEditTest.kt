@@ -1,7 +1,6 @@
 package com.example.ui
 
 import android.app.Application
-import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.EpisodeEntity
 import com.example.data.ManualAdRange
@@ -12,7 +11,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -23,7 +22,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -48,7 +46,7 @@ class ManualAdRangeViewModelEditTest {
     }
 
     @Test
-    fun nudgePersistsNewBoundaryAndRebuildsSkipInterval() = runBlocking {
+    fun nudgePersistsNewBoundaryAndRebuildsSkipInterval() = runTest {
         val episode = insertEpisode("episode-1", ManualAdRange(10_000L, 20_000L))
         setCurrentEpisode(episode)
 
@@ -69,7 +67,7 @@ class ManualAdRangeViewModelEditTest {
     }
 
     @Test
-    fun deleteRemovesRangeAndItsInterval() = runBlocking {
+    fun deleteRemovesRangeAndItsInterval() = runTest {
         val episode = insertEpisode("episode-2", ManualAdRange(10_000L, 20_000L))
         setCurrentEpisode(episode)
 
@@ -85,7 +83,7 @@ class ManualAdRangeViewModelEditTest {
     }
 
     @Test
-    fun invalidNudgeLeavesStoredRangeAndIntervalUnchanged() = runBlocking {
+    fun invalidNudgeLeavesStoredRangeAndIntervalUnchanged() = runTest {
         val episode = insertEpisode("episode-3", ManualAdRange(10_000L, 11_000L))
         setCurrentEpisode(episode)
         setDetectedAds(
@@ -112,7 +110,7 @@ class ManualAdRangeViewModelEditTest {
     }
 
     @Test
-    fun changingEpisodeBeforeWriteDoesNotMutateNewEpisodeState() = runBlocking {
+    fun changingEpisodeBeforeWriteDoesNotMutateNewEpisodeState() = runTest {
         val first = insertEpisode("episode-4", ManualAdRange(10_000L, 20_000L))
         val second = insertEpisode("episode-5", ManualAdRange(30_000L, 40_000L))
         setCurrentEpisode(first)
@@ -155,13 +153,58 @@ class ManualAdRangeViewModelEditTest {
         (field.get(viewModel) as MutableStateFlow<EpisodeEntity?>).value = episode
     }
 
+    @Test
+    fun republishAfterStaleAnalysisKeepsNewManualBoundaryAndOtherAds() = runTest {
+        val episode = insertEpisode("episode-6", ManualAdRange(10_000L, 20_000L))
+        setCurrentEpisode(episode)
+        setDetectedAds(
+            AdSkipInterval(
+                id = "manual_episode-6_10000_20000",
+                startMs = 10_000L,
+                endMs = 20_000L,
+                triggerWord = "Manual ad mark",
+                resumeWord = "Marked ad end",
+                confidence = 1f,
+                source = "Manual User Mark"
+            ),
+            AdSkipInterval(
+                id = "transcript-ad",
+                startMs = 30_000L,
+                endMs = 40_000L,
+                triggerWord = "Sponsor",
+                resumeWord = "Back to topic",
+                confidence = 0.9f,
+                source = "Transcript"
+            )
+        )
+
+        // An edit lands while a background analysis still holds the old episode.
+        dao.updateManualAdRanges(
+            episode.id,
+            ManualAdRangeCodec.encode(listOf(ManualAdRange(10_000L, 21_000L)))
+        )
+
+        viewModel.syncManualAdRanges(episode.id, 100_000L)
+        awaitCondition {
+            viewModel.detectedTranscriptAds.value.firstOrNull { it.id.startsWith("manual_") }?.endMs == 21_000L
+        }
+
+        val ads = viewModel.detectedTranscriptAds.value
+        assertEquals(2, ads.size)
+        assertEquals("transcript-ad", ads.single { !it.id.startsWith("manual_") }.id)
+    }
+
     private suspend fun awaitCondition(timeoutMs: Long = 2_000L, predicate: () -> Boolean) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (!predicate() && System.currentTimeMillis() < deadline) {
-            Shadows.shadowOf(Looper.getMainLooper()).idle()
+
             delay(10L)
         }
-        check(predicate()) { "Condition not met within ${timeoutMs}ms" }
+        check(predicate()) {
+            "Condition not met within ${timeoutMs}ms; ranges=${viewModel.currentPlayingEpisode.value?.manualAdRanges} " +
+                "ads=${viewModel.detectedTranscriptAds.value.map { it.id }} saving=${viewModel.isManualAdRangeSaving.value} " +
+                "event=${viewModel.sponsorSkipEvent.value}"
+        }
     }
 
     private fun setDetectedAds(vararg intervals: AdSkipInterval) {
