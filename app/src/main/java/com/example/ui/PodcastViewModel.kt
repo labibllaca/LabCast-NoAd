@@ -121,7 +121,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
         val updatedSegments = currentSegments.map { seg ->
             if (seg.startTimeSeconds == startTimeSeconds) {
-                seg.copy(isSponsor = !seg.isSponsor)
+                val marked = !seg.isSponsor
+                seg.copy(isSponsor = marked, manuallyUnmarked = !marked)
             } else {
                 seg
             }
@@ -148,7 +149,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         val suggestedTimes = suggestions.map { it.segment.startTimeSeconds }.toSet()
         val updatedSegments = currentSegments.map { seg ->
             if (suggestedTimes.contains(seg.startTimeSeconds)) {
-                seg.copy(isSponsor = true)
+                seg.copy(isSponsor = true, manuallyUnmarked = false)
             } else {
                 seg
             }

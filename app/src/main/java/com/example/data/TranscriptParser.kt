@@ -7,7 +7,9 @@ data class TranscriptSegment(
     val speaker: String,
     val text: String,
     val isSponsor: Boolean = false,
-    val sponsorBrand: String? = null
+    val sponsorBrand: String? = null,
+    /** Set when the user explicitly removed an ad mark; overrides sponsor heuristics on reparse. */
+    val manuallyUnmarked: Boolean = false
 ) {
     fun formattedTime(): String {
         val hours = startTimeSeconds / 3600
@@ -28,6 +30,9 @@ data class SuggestedAdChunk(
 )
 
 object TranscriptParser {
+
+    /** Sentinel stored in transcript text so a manual unmark survives reparsing. */
+    const val UNMARK_TOKEN = "[LabCast:NotAd]"
 
     private val sponsorBrands = listOf(
         "Athletic Greens", "AG1", "LMNT", "Eight Sleep", "BetterHelp", "InsideTracker",
@@ -66,6 +71,7 @@ object TranscriptParser {
     fun analyzeTranscriptForSuggestedAds(segments: List<TranscriptSegment>): List<SuggestedAdChunk> {
         val suggestions = mutableListOf<SuggestedAdChunk>()
         for (seg in segments) {
+            if (seg.manuallyUnmarked) continue
             val textLower = seg.text.lowercase(Locale.ROOT)
             val speakerLower = seg.speaker.lowercase(Locale.ROOT)
 
@@ -99,7 +105,8 @@ object TranscriptParser {
         return segments.joinToString("\n") { seg ->
             val timeFormatted = seg.formattedTime()
             val sponsorTag = if (seg.isSponsor) " [Sponsor Break]" else ""
-            "$timeFormatted [${seg.speaker}$sponsorTag] ${seg.text}"
+            val unmarkTag = if (!seg.isSponsor && seg.manuallyUnmarked) "$UNMARK_TOKEN " else ""
+            "$timeFormatted [${seg.speaker}$sponsorTag] $unmarkTag${seg.text}"
         }
     }
 
@@ -169,6 +176,24 @@ object TranscriptParser {
         return parseTranscript(rawTranscript, safeDuration)
     }
 
+    private fun buildSegment(
+        timeSeconds: Long,
+        speaker: String,
+        rawText: String
+    ): TranscriptSegment {
+        val manuallyUnmarked = rawText.startsWith(UNMARK_TOKEN)
+        val text = if (manuallyUnmarked) rawText.removePrefix(UNMARK_TOKEN).trim() else rawText
+        val isSponsor = !manuallyUnmarked && (isSponsorText(text) || isSponsorText(speaker))
+        return TranscriptSegment(
+            timeSeconds,
+            speaker,
+            text,
+            isSponsor,
+            detectSponsorBrand(text),
+            manuallyUnmarked
+        )
+    }
+
     private fun parseRawTranscriptLines(rawTranscript: String, durationSeconds: Long): List<TranscriptSegment> {
         val segments = mutableListOf<TranscriptSegment>()
         val lines = rawTranscript.split("\n")
@@ -195,9 +220,7 @@ object TranscriptParser {
                 val speaker = bracketedMatch.groupValues[2].ifEmpty { bracketedMatch.groupValues[3] }.trim().ifEmpty { "Host" }
                 val text = bracketedMatch.groupValues[4].trim()
                 if (text.isNotEmpty()) {
-                    val isSponsor = isSponsorText(text) || isSponsorText(speaker)
-                    val brand = detectSponsorBrand(text)
-                    segments.add(TranscriptSegment(timeSec, speaker, text, isSponsor, brand))
+                    segments.add(buildSegment(timeSec, speaker, text))
                     pendingCueTime = null
                     continue
                 }
@@ -210,9 +233,7 @@ object TranscriptParser {
                 val speaker = unbracketedMatch.groupValues[2].ifEmpty { unbracketedMatch.groupValues[3] }.trim().ifEmpty { "Host" }
                 val text = unbracketedMatch.groupValues[4].trim()
                 if (text.isNotEmpty()) {
-                    val isSponsor = isSponsorText(text) || isSponsorText(speaker)
-                    val brand = detectSponsorBrand(text)
-                    segments.add(TranscriptSegment(timeSec, speaker, text, isSponsor, brand))
+                    segments.add(buildSegment(timeSec, speaker, text))
                     pendingCueTime = null
                     continue
                 }
@@ -231,21 +252,17 @@ object TranscriptParser {
 
                 val cleanText = text.replace(Regex("<.*?>"), "").trim()
                 if (cleanText.isNotEmpty()) {
-                    val isSponsor = isSponsorText(cleanText) || isSponsorText(speaker)
-                    val brand = detectSponsorBrand(cleanText)
-                    segments.add(TranscriptSegment(pendingCueTime, speaker, cleanText, isSponsor, brand))
+                    segments.add(buildSegment(pendingCueTime, speaker, cleanText))
                     pendingCueTime = null
                     continue
                 }
             }
 
             // Plain text line without explicit timestamp
-            val isSponsor = isSponsorText(line)
-            val brand = detectSponsorBrand(line)
             val speakerMatch = Regex("""^([a-zA-Z0-9\s_]{2,20}):\s*(.*)""").find(line)
             val speaker = speakerMatch?.groupValues?.get(1)?.trim() ?: "Host"
             val text = speakerMatch?.groupValues?.get(2)?.trim() ?: line
-            segments.add(TranscriptSegment(0L, speaker, text, isSponsor, brand))
+            segments.add(buildSegment(0L, speaker, text))
         }
 
         return segments
