@@ -1,17 +1,47 @@
 package com.example.ui
 
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /** True when the activity is laid out in landscape; portrait is the default everywhere. */
 val LocalIsLandscape = staticCompositionLocalOf { false }
+
+/** Side-by-side player layout used only in landscape; portrait keeps its single column. */
+@Composable
+fun LandscapePlayerFrame(
+    artwork: @Composable () -> Unit,
+    body: @Composable () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxHeight().testTag("landscape_player_frame")
+    ) {
+        Box(
+            modifier = Modifier
+                .weight(0.85f)
+                .fillMaxHeight()
+                .testTag("landscape_player_artwork")
+        ) { artwork() }
+        Box(
+            modifier = Modifier
+                .weight(1.4f)
+                .fillMaxHeight()
+                .testTag("landscape_player_body")
+        ) { body() }
+    }
+}
 
 object LandscapeLayout {
     fun isLandscape(configuration: Configuration): Boolean =

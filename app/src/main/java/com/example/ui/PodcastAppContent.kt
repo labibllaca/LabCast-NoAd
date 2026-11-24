@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
@@ -3521,6 +3522,37 @@ fun FullPlayerScreen(
 
     val durationMs = episode!!.durationSeconds * 1000f
     val sliderValue = playbackPositionMs.toFloat()
+    val isLandscapePlayer = LocalIsLandscape.current
+    val artworkSize = LandscapeLayout.playerArtworkSize(
+        isLandscapePlayer,
+        LocalConfiguration.current.screenHeightDp.dp
+    )
+    val playerArtwork: @Composable () -> Unit = {
+        // Big Center Artwork (Swipe down on image minimizes player view)
+        Box(
+            modifier = Modifier
+                .size(artworkSize)
+                .clip(RoundedCornerShape(24.dp))
+                .background(colors.cardBackground)
+                .border(1.dp, if (isAdActive) AdGold else colors.itemBorder, RoundedCornerShape(24.dp))
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { _, dragAmount ->
+                        if (dragAmount > 20f) {
+                            onCollapse()
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            SmartPodcastImage(
+                imageUrl = episode!!.podcastCoverUrl,
+                contentDescription = episode!!.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                reloadKey = episode!!.podcastCoverUrl
+            )
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -3577,13 +3609,16 @@ fun FullPlayerScreen(
                 .background(if (colors.isDark) ObsidianBlack.copy(alpha = 0.65f) else Color.White.copy(alpha = 0.5f))
         )
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
+        val playerSections: @Composable () -> Unit = {
+            Column(
+                modifier = if (isLandscapePlayer) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.fillMaxSize().padding(24.dp)
+                },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = if (isLandscapePlayer) Arrangement.Top else Arrangement.SpaceBetween
+            ) {
             // Header Action Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -3748,29 +3783,8 @@ fun FullPlayerScreen(
                 }
             }
 
-            // Big Center Artwork (Swipe down on image minimizes player view)
-            Box(
-                modifier = Modifier
-                    .size(280.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(colors.cardBackground)
-                    .border(1.dp, if (isAdActive) AdGold else colors.itemBorder, RoundedCornerShape(24.dp))
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures { _, dragAmount ->
-                            if (dragAmount > 20f) {
-                                onCollapse()
-                            }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                SmartPodcastImage(
-                    imageUrl = episode!!.podcastCoverUrl,
-                    contentDescription = episode!!.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    reloadKey = episode!!.podcastCoverUrl
-                )
+            if (!isLandscapePlayer) {
+                playerArtwork()
             }
 
             // Titles & Active Chapter / Buffering Badge
@@ -4415,6 +4429,29 @@ fun FullPlayerScreen(
                     )
                 }
             }
+            }
+        }
+
+        if (isLandscapePlayer) {
+            LandscapePlayerFrame(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
+                artwork = {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { playerArtwork() }
+                },
+                body = {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(end = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        playerSections()
+                    }
+                }
+            )
+        } else {
+            playerSections()
         }
 
         // Saved Manual Ad Marks Modal Bottom Sheet
