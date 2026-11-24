@@ -270,19 +270,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 repository.addManualAdRange(episode.id, range)
-                val updatedEpisode = repository.getEpisodeById(episode.id)
-                    ?: episode.copy(manualAdRanges = ManualAdRangeCodec.encode(
-                        ManualAdRangeCodec.decode(episode.manualAdRanges) + range
-                    ))
-                if (_currentPlayingEpisode.value?.id == episode.id) {
-                    _currentPlayingEpisode.value = updatedEpisode
-                    val manualIntervals = ManualAdSkipSelection.intervals(
-                        episode.id,
-                        ManualAdRangeCodec.decode(updatedEpisode.manualAdRanges),
-                        durationMs
-                    )
-                    _detectedTranscriptAds.value = (_detectedTranscriptAds.value + manualIntervals).distinctBy { it.id }
-                }
+                syncManualAdRanges(episode.id, durationMs)
                 _sponsorSkipEvent.value = "Manual ad range saved for ${episode.title}."
             } catch (error: Exception) {
                 _sponsorSkipEvent.value = "Could not save manual ad range: ${error.message.orEmpty()}"
@@ -296,6 +284,64 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     fun cancelManualAdMark() {
         manualAdMarkSession.cancel()
         _pendingManualAdStartMs.value = null
+    }
+
+    private suspend fun syncManualAdRanges(episodeId: String, durationMs: Long) {
+        val updatedEpisode = repository.getEpisodeById(episodeId) ?: return
+        if (_currentPlayingEpisode.value?.id != episodeId) return
+
+        _currentPlayingEpisode.value = updatedEpisode
+        val manualPrefix = "manual_${episodeId}_"
+        val otherAds = _detectedTranscriptAds.value.filterNot { it.id.startsWith(manualPrefix) }
+        val manualIntervals = ManualAdSkipSelection.intervals(
+            episodeId,
+            ManualAdRangeCodec.decode(updatedEpisode.manualAdRanges),
+            durationMs
+        )
+        _detectedTranscriptAds.value = (otherAds + manualIntervals).distinctBy { it.id }
+    }
+
+    fun nudgeManualAdRange(range: ManualAdRange, isStart: Boolean, deltaMs: Long) {
+        val episode = _currentPlayingEpisode.value ?: return
+        if (_isManualAdRangeSaving.value) return
+        val durationMs = episode.durationSeconds.coerceAtLeast(0L) * 1000L
+        val moved = ManualAdRangeEditor.nudge(listOf(range), range, isStart, deltaMs, durationMs).firstOrNull()
+        if (moved == null || moved == range) {
+            _sponsorSkipEvent.value = "Ad mark could not be moved."
+            return
+        }
+
+        _isManualAdRangeSaving.value = true
+        viewModelScope.launch {
+            try {
+                repository.updateManualAdRange(episode.id, range, moved)
+                syncManualAdRanges(episode.id, durationMs)
+                _sponsorSkipEvent.value = "Manual ad mark moved."
+            } catch (error: Exception) {
+                _sponsorSkipEvent.value = "Could not move manual ad mark: ${error.message.orEmpty()}"
+            } finally {
+                _isManualAdRangeSaving.value = false
+            }
+        }
+    }
+
+    fun deleteManualAdRange(range: ManualAdRange) {
+        val episode = _currentPlayingEpisode.value ?: return
+        if (_isManualAdRangeSaving.value) return
+        val durationMs = episode.durationSeconds.coerceAtLeast(0L) * 1000L
+
+        _isManualAdRangeSaving.value = true
+        viewModelScope.launch {
+            try {
+                repository.deleteManualAdRange(episode.id, range)
+                syncManualAdRanges(episode.id, durationMs)
+                _sponsorSkipEvent.value = "Manual ad mark deleted."
+            } catch (error: Exception) {
+                _sponsorSkipEvent.value = "Could not delete manual ad mark: ${error.message.orEmpty()}"
+            } finally {
+                _isManualAdRangeSaving.value = false
+            }
+        }
     }
 
     // Audio Waveform Dynamics & Acoustic Ad Detection
