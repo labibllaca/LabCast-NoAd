@@ -104,9 +104,12 @@ object TranscriptParser {
     fun serializeSegmentsToTranscriptText(segments: List<TranscriptSegment>): String {
         return segments.joinToString("\n") { seg ->
             val timeFormatted = seg.formattedTime()
-            val sponsorTag = if (seg.isSponsor) " [Sponsor Break]" else ""
-            val unmarkTag = if (!seg.isSponsor && seg.manuallyUnmarked) "$UNMARK_TOKEN " else ""
-            "$timeFormatted [${seg.speaker}$sponsorTag] $unmarkTag${seg.text}"
+            val tag = when {
+                seg.isSponsor -> "[Sponsor Break] "
+                seg.manuallyUnmarked -> "$UNMARK_TOKEN "
+                else -> ""
+            }
+            "$timeFormatted [${normalizeSpeaker(seg.speaker)}] $tag${seg.text}"
         }
     }
 
@@ -176,17 +179,36 @@ object TranscriptParser {
         return parseTranscript(rawTranscript, safeDuration)
     }
 
+    /** Removes reserved tags that older versions nested inside the speaker label. */
+    private fun normalizeSpeaker(rawSpeaker: String): String = rawSpeaker
+        .replace(Regex("""\[\s*Sponsor Break\s*\]?""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""\[?\s*Sponsor Break\s*\]""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""\[\s*LabCast:NotAd\s*\]?""", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("""\[?\s*LabCast:NotAd\s*\]""", RegexOption.IGNORE_CASE), " ")
+        .replace("[", "")
+        .replace("]", "")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+
     private fun buildSegment(
         timeSeconds: Long,
         speaker: String,
         rawText: String
     ): TranscriptSegment {
-        val manuallyUnmarked = rawText.startsWith(UNMARK_TOKEN)
-        val text = if (manuallyUnmarked) rawText.removePrefix(UNMARK_TOKEN).trim() else rawText
-        val isSponsor = !manuallyUnmarked && (isSponsorText(text) || isSponsorText(speaker))
+        var text = rawText.trim()
+        val textSponsorTag = text.startsWith("[Sponsor Break]", ignoreCase = true)
+        if (textSponsorTag) text = text.removePrefix("[Sponsor Break]").trim()
+        val textUnmarkTag = text.startsWith(UNMARK_TOKEN)
+        if (textUnmarkTag) text = text.removePrefix(UNMARK_TOKEN).trim()
+
+        val manuallyUnmarked = textUnmarkTag ||
+            speaker.contains("LabCast:NotAd", ignoreCase = true)
+        val sponsorTag = textSponsorTag || speaker.contains("Sponsor Break", ignoreCase = true)
+        val cleanSpeaker = normalizeSpeaker(speaker)
+        val isSponsor = !manuallyUnmarked && (sponsorTag || isSponsorText(text) || isSponsorText(cleanSpeaker))
         return TranscriptSegment(
             timeSeconds,
-            speaker,
+            cleanSpeaker,
             text,
             isSponsor,
             detectSponsorBrand(text),

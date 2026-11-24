@@ -4749,7 +4749,10 @@ fun TranscriptBottomSheet(
                             color = colors.textPrimary,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Black,
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         val sponsorCount = transcriptSegments.count { it.isSponsor }
@@ -4764,6 +4767,7 @@ fun TranscriptBottomSheet(
                                     color = adAccent,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
@@ -5037,17 +5041,21 @@ fun TranscriptBottomSheet(
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
+                                    Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = "AI Transcript Ad & Promo Analysis",
                                             color = colors.textPrimary,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
                                             text = "${suggestedAdChunks.size} suggested ad or promo chunks detected in script",
                                             color = adAccent,
-                                            fontSize = 10.sp
+                                            fontSize = 10.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -5193,6 +5201,7 @@ fun TranscriptBottomSheet(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .wrapContentHeight()
                                     .border(
                                         width = if (isCurrentLine || segment.isSponsor || suggestion != null) 2.dp else 1.5.dp,
                                         color = when {
@@ -5230,7 +5239,10 @@ fun TranscriptBottomSheet(
                                                 text = segment.speaker,
                                                 color = colors.textPrimary,
                                                 fontSize = 12.sp,
-                                                fontWeight = FontWeight.Black
+                                                fontWeight = FontWeight.Black,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
                                             )
                                         }
 
