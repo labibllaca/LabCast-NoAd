@@ -4,11 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
 import coil.ImageLoader
+import com.example.ui.LandscapeLayout
+import com.example.ui.LocalIsLandscape
 import com.example.ui.PodcastAppContent
 import com.example.ui.PodcastViewModel
 import com.example.ui.theme.MyApplicationTheme
@@ -47,10 +51,13 @@ class MainActivity : ComponentActivity() {
     }
 
     setContent {
+      val isLandscape = LandscapeLayout.isLandscape(LocalConfiguration.current)
       val viewModel: PodcastViewModel = viewModel()
       val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-      MyApplicationTheme(themeMode = themeMode) {
-        PodcastAppContent(viewModel = viewModel)
+      CompositionLocalProvider(LocalIsLandscape provides isLandscape) {
+        MyApplicationTheme(themeMode = themeMode) {
+          PodcastAppContent(viewModel = viewModel)
+        }
       }
     }
   }
