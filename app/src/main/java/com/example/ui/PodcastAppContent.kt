@@ -632,13 +632,8 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(bottom = 6.dp)
-            ) {
-                // Persistent Floating Pill Mini Player
+            val isLandscape = LocalIsLandscape.current
+            val miniPlayer: @Composable () -> Unit = {
                 currentPlayingEpisode?.let { episode ->
                     AnimatedVisibility(
                         visible = !isPlayerExpanded,
@@ -653,16 +648,37 @@ fun PodcastAppContent(viewModel: PodcastViewModel) {
                         )
                     }
                 }
-
-                // Floating Pill Navigation Bar
+            }
+            val navigationBar: @Composable () -> Unit = {
                 FloatingPillNavigationBar(
                     activeTab = activeTab,
                     isAlbanian = isAlbanianLanguage,
                     onTabSelected = { tab -> viewModel.selectTab(tab) },
-                    onSearchClick = {
-                        viewModel.focusSearch()
-                    }
+                    onSearchClick = { viewModel.focusSearch() }
                 )
+            }
+
+            if (isLandscape) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.weight(1f)) { miniPlayer() }
+                    Box(modifier = Modifier.weight(1f)) { navigationBar() }
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 6.dp)
+                ) {
+                    miniPlayer()
+                    navigationBar()
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background
@@ -886,9 +902,7 @@ fun DiscoverScreen(viewModel: PodcastViewModel) {
         )
     } else {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
+            modifier = LandscapeLayout.listScreenModifier(LocalIsLandscape.current),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Header Hero
@@ -1757,9 +1771,7 @@ fun PodcastDetailScreen(podcast: PodcastEntity, viewModel: PodcastViewModel, onB
         modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
+            modifier = LandscapeLayout.listScreenModifier(LocalIsLandscape.current),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             // Back navigation & Top Refresh indicator
@@ -2236,9 +2248,7 @@ fun DownloadsScreen(viewModel: PodcastViewModel) {
     val isSmartDownload by viewModel.isSmartDownloadEnabled.collectAsStateWithLifecycle()
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = LandscapeLayout.listScreenModifier(LocalIsLandscape.current),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -2624,9 +2634,7 @@ fun VerlaufScreen(viewModel: PodcastViewModel) {
     val completedCount = historyEpisodes.count { it.isCompleted || it.percentageListened >= 100 }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
+        modifier = LandscapeLayout.listScreenModifier(LocalIsLandscape.current),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         item {
@@ -3331,11 +3339,13 @@ fun FloatingPillNavigationBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalCustomColors.current
+    val isLandscape = LocalIsLandscape.current
+    val barHeight = if (isLandscape) 44.dp else 60.dp
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 4.dp),
+            .padding(horizontal = if (isLandscape) 8.dp else 14.dp, vertical = if (isLandscape) 2.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -3343,7 +3353,7 @@ fun FloatingPillNavigationBar(
         Surface(
             modifier = Modifier
                 .weight(1f)
-                .height(60.dp)
+                .height(barHeight)
                 .testTag("floating_nav_dock"),
             shape = RoundedCornerShape(30.dp),
             color = colors.cardBackground.copy(alpha = if (colors.isDark) 0.94f else 0.98f),
@@ -3399,7 +3409,7 @@ fun FloatingPillNavigationBar(
         // Circular Search Pill Button on the Right
         Surface(
             modifier = Modifier
-                .size(60.dp)
+                .size(barHeight)
                 .testTag("floating_search_pill"),
             shape = CircleShape,
             color = colors.cardBackground.copy(alpha = if (colors.isDark) 0.94f else 0.98f),

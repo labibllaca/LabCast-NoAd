@@ -69,7 +69,14 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 20.dp)
+            .then(
+                if (LocalIsLandscape.current) {
+                    Modifier
+                        .padding(LandscapeLayout.screenPadding(true))
+                        .widthIn(max = LandscapeLayout.listMaxWidth(true))
+                } else Modifier
+            ),
         contentPadding = PaddingValues(top = 24.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {

@@ -2,7 +2,11 @@ package com.example.ui
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -19,6 +23,17 @@ object LandscapeLayout {
     fun listMaxWidth(isLandscape: Boolean): Dp = if (isLandscape) 600.dp else Dp.Unspecified
 
     fun sheetMaxWidth(isLandscape: Boolean): Dp = if (isLandscape) 600.dp else Dp.Unspecified
+
+    /** Portrait keeps its original horizontal padding; landscape gets compact padding and a capped width. */
+    fun listScreenModifier(isLandscape: Boolean, portraitHorizontal: Dp = 16.dp): Modifier =
+        if (isLandscape) {
+            Modifier
+                .fillMaxSize()
+                .padding(screenPadding(true))
+                .widthIn(max = listMaxWidth(true))
+        } else {
+            Modifier.fillMaxSize().padding(horizontal = portraitHorizontal)
+        }
 
     fun playerArtworkSize(isLandscape: Boolean, screenHeightDp: Dp): Dp =
         if (!isLandscape) 280.dp
