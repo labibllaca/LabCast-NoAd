@@ -3443,6 +3443,7 @@ private fun PillNavItem(
 ) {
     val colors = LocalCustomColors.current
     val accentColor = if (colors.isDark) CyberGreen else LightPrimary
+    val isLandscape = LocalIsLandscape.current
 
     val scale by animateFloatAsState(
         targetValue = if (selected) 1.08f else 1.0f,
@@ -3454,7 +3455,7 @@ private fun PillNavItem(
         modifier = Modifier
             .clip(RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .padding(horizontal = 6.dp, vertical = if (isLandscape) 0.dp else 4.dp)
             .scale(scale)
             .testTag(testTag),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -3464,15 +3465,17 @@ private fun PillNavItem(
             imageVector = icon,
             contentDescription = label,
             tint = if (selected) accentColor else colors.textMuted,
-            modifier = Modifier.size(22.dp)
+            modifier = Modifier.size(if (isLandscape) 16.dp else 22.dp)
         )
-        Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.height(if (isLandscape) 0.dp else 2.dp))
         Text(
             text = label,
             color = if (selected) accentColor else colors.textMuted,
             fontSize = 10.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1
+            maxLines = 1,
+            style = if (isLandscape) LocalTextStyle.current.copy(lineHeight = 12.sp) else LocalTextStyle.current,
+            modifier = if (isLandscape) Modifier.height(14.dp) else Modifier
         )
     }
 }
@@ -4534,7 +4537,7 @@ fun EpisodeDescriptionBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "episode_description_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "episode_description_bottom_sheet", LocalConfiguration.current.screenHeightDp.dp)
     ) {
         Column(
             modifier = Modifier
@@ -4718,7 +4721,7 @@ fun TranscriptBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "transcript_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "transcript_bottom_sheet", LocalConfiguration.current.screenHeightDp.dp)
     ) {
         Column(
             modifier = Modifier
@@ -5379,7 +5382,7 @@ fun ChaptersBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "chapters_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "chapters_bottom_sheet", LocalConfiguration.current.screenHeightDp.dp)
     ) {
         Column(
             modifier = Modifier
@@ -5642,7 +5645,7 @@ fun SleepTimerBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "sleep_timer_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "sleep_timer_bottom_sheet", LocalConfiguration.current.screenHeightDp.dp)
     ) {
         Column(
             modifier = Modifier

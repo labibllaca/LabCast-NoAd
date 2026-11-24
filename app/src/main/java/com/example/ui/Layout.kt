@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
@@ -54,10 +55,18 @@ object LandscapeLayout {
 
     fun sheetMaxWidth(isLandscape: Boolean): Dp = if (isLandscape) 600.dp else Dp.Unspecified
 
-    fun sheetModifier(isLandscape: Boolean, tag: String): Modifier =
+    fun sheetMaxHeight(screenHeightDp: Dp): Dp = screenHeightDp * 0.8f
+
+    fun sheetModifier(isLandscape: Boolean, tag: String, screenHeightDp: Dp): Modifier =
         Modifier
             .testTag(tag)
-            .then(if (isLandscape) Modifier.widthIn(max = sheetMaxWidth(true)) else Modifier)
+            .then(
+                if (isLandscape) {
+                    Modifier
+                        .widthIn(max = sheetMaxWidth(true))
+                        .heightIn(max = sheetMaxHeight(screenHeightDp))
+                } else Modifier
+            )
 
     /** Portrait keeps its original horizontal padding; landscape gets compact padding and a capped width. */
     fun listScreenModifier(isLandscape: Boolean, portraitHorizontal: Dp = 16.dp): Modifier =

@@ -28,7 +28,7 @@ Keep the current portrait UI unchanged and add a landscape layout for every scre
 
 ## Implementation outline
 - Add `ui/Layout.kt` with `LocalIsLandscape` and small helpers: landscape content padding, sheet width/height modifier, and player artwork size derived from available height.
-- Provide the flag in `PodcastAppContent` and branch each screen's root container; keep portrait expressions identical.
+- Provide the flag in `MainActivity` and branch each screen's root container; keep portrait expressions identical.
 - In `FullPlayerScreen`, extract the portrait column untouched and add a landscape `Row` variant that reuses the same child composables (ad console, slider, controls, sheet hosts).
 - Apply the shared sheet modifier to all `ModalBottomSheet` composables (chapter, transcript, description, sleep timer, manual marks).
 - Add focused Compose tests for landscape helpers/tags and a landscape-qualifier render test where practical; run the full unit suite and `assembleDebug`.

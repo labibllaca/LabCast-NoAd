@@ -25,6 +25,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,7 +50,11 @@ fun ManualMarksBottomSheet(
         containerColor = colors.cardBackground,
         dragHandle = { BottomSheetDefaults.DragHandle(color = colors.itemBorder) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "manual_marks_sheet")
+        modifier = LandscapeLayout.sheetModifier(
+            LocalIsLandscape.current,
+            "manual_marks_sheet",
+            LocalConfiguration.current.screenHeightDp.dp
+        )
     ) {
         Column(
             modifier = Modifier

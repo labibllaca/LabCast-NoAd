@@ -8,6 +8,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
 import com.example.data.ManualAdRange
 import com.example.ui.theme.MyApplicationTheme
 import org.junit.Assert.assertEquals
@@ -79,11 +81,15 @@ class ManualMarksBottomSheetTest {
     @Test
     fun landscapeSheetStaysVisibleAndDismissible() {
         var dismissed = false
+        var maxHeightDp = 0f
         composeRule.setContent {
+            maxHeightDp = LocalConfiguration.current.screenHeightDp * 0.8f
             CompositionLocalProvider(LocalIsLandscape provides true) {
                 MyApplicationTheme {
                     ManualMarksBottomSheet(
-                        ranges = listOf(first),
+                        ranges = List(12) { index ->
+                            ManualAdRange(index * 10_000L, index * 10_000L + 5_000L)
+                        },
                         durationMs = 3_600_000L,
                         formatTime = ::formatTime,
                         onNudge = { _: ManualAdRange, _: Boolean, _: Long -> },
@@ -94,7 +100,13 @@ class ManualMarksBottomSheetTest {
             }
         }
 
-        composeRule.onNodeWithTag("manual_marks_sheet").assertIsDisplayed()
+        val sheetHeight = composeRule.onNodeWithTag("manual_marks_sheet")
+            .fetchSemanticsNode().boundsInRoot.height
+        val maxHeightPx = with(composeRule.density) { maxHeightDp.dp.toPx() }
+        assertTrue(
+            "Landscape sheet height $sheetHeight should be at most $maxHeightPx",
+            sheetHeight <= maxHeightPx
+        )
         composeRule.onNodeWithTag("manual_marks_dismiss").performClick()
         assertTrue(dismissed)
     }
