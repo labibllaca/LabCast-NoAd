@@ -3486,6 +3486,8 @@ fun FullPlayerScreen(
     val playbackPositionMs by viewModel.playbackPositionMs.collectAsStateWithLifecycle()
     val isAdActive by viewModel.isAdActive.collectAsStateWithLifecycle()
     val isAutoAdSkipEnabled by viewModel.isAutoAdSkipEnabled.collectAsStateWithLifecycle()
+    val pendingManualAdStartMs by viewModel.pendingManualAdStartMs.collectAsStateWithLifecycle()
+    val isManualAdRangeSaving by viewModel.isManualAdRangeSaving.collectAsStateWithLifecycle()
     val chapters by viewModel.currentChapters.collectAsStateWithLifecycle()
     val activeChapter by viewModel.currentActiveChapter.collectAsStateWithLifecycle()
     val transcriptSegments by viewModel.transcriptSegments.collectAsStateWithLifecycle()
@@ -3929,6 +3931,65 @@ fun FullPlayerScreen(
                             ),
                             modifier = Modifier.testTag("player_ad_skip_toggle_switch")
                         )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Manual ad mark",
+                                color = colors.textPrimary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = pendingManualAdStartMs?.let {
+                                    if (isManualAdRangeSaving) "Saving marked ad…"
+                                    else "Started at ${viewModel.formatDuration(it / 1000L)}"
+                                } ?: "Mark this ad for future plays",
+                                color = colors.textMuted,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (pendingManualAdStartMs == null) {
+                            Button(
+                                onClick = { viewModel.startManualAdMark() },
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryAccent),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                                modifier = Modifier.heightIn(min = 40.dp).testTag("manual_ad_start_button")
+                            ) {
+                                Text("Start Ad", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else if (isManualAdRangeSaving) {
+                            Button(
+                                onClick = {},
+                                enabled = false,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                modifier = Modifier.heightIn(min = 40.dp).testTag("manual_ad_saving_button")
+                            ) {
+                                Text("Saving…", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = { viewModel.cancelManualAdMark() },
+                                    modifier = Modifier.testTag("manual_ad_cancel_button")
+                                ) {
+                                    Text("Cancel", color = colors.textMuted, fontSize = 10.sp)
+                                }
+                                Button(
+                                    onClick = { viewModel.finishManualAdMark() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AdGold, contentColor = ObsidianBlack),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                                    modifier = Modifier.heightIn(min = 40.dp).testTag("manual_ad_end_button")
+                                ) {
+                                    Text("End & Save", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))

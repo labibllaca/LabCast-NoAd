@@ -35,7 +35,9 @@ data class EpisodeEntity(
     val chapters: String = "", // e.g. "0:Intro|120:Topic 1|480:Topic 2"
     val transcript: String = "", // Timestamped podcast transcript content
     val publishTimestamp: Long = 0L,
-    val downloadTimestamp: Long = 0L
+    val downloadTimestamp: Long = 0L,
+    @androidx.room.ColumnInfo(defaultValue = "''")
+    val manualAdRanges: String = ""
 )
 
 fun EpisodeEntity.getEffectiveTimestamp(): Long {

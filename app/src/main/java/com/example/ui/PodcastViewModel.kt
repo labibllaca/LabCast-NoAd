@@ -15,6 +15,10 @@ import com.example.player.AcousticAdSegment
 import com.example.player.PodcastKeywordSpotter
 import com.example.player.AdSkipInterval
 import com.example.player.IntroMusicInterval
+import com.example.player.SponsorChapterSkipTarget
+import com.example.player.ChapterSponsorSkipGuard
+import com.example.player.ManualAdMarkSession
+import com.example.player.ManualAdSkipSelection
 import com.example.player.VozTranscriber
 import com.example.service.PodcastMediaService
 import com.example.util.EpisodeDownloader
@@ -193,8 +197,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         stopPlaybackJob()
         _isPlayerExpanded.value = false
         _isAdActive.value = false
+        manualAdMarkSession.reset()
+        _pendingManualAdStartMs.value = null
         lastSkippedTranscriptTimeSec = null
-        lastSkippedChapterTitle = null
+        chapterSponsorSkipGuard.reset()
         lastSkippedAcousticAdId = null
 
         if (current != null) {
@@ -236,6 +242,61 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private val _isAutoAdSkipEnabled = MutableStateFlow(true)
     val isAutoAdSkipEnabled: StateFlow<Boolean> = _isAutoAdSkipEnabled.asStateFlow()
+
+    private val manualAdMarkSession = ManualAdMarkSession()
+    private val _pendingManualAdStartMs = MutableStateFlow<Long?>(null)
+    val pendingManualAdStartMs: StateFlow<Long?> = _pendingManualAdStartMs.asStateFlow()
+    private val _isManualAdRangeSaving = MutableStateFlow(false)
+    val isManualAdRangeSaving: StateFlow<Boolean> = _isManualAdRangeSaving.asStateFlow()
+
+    fun startManualAdMark() {
+        if (_currentPlayingEpisode.value == null || _isManualAdRangeSaving.value) return
+        if (manualAdMarkSession.start(_playbackPositionMs.value)) {
+            _pendingManualAdStartMs.value = manualAdMarkSession.pendingStartMs
+        }
+    }
+
+    fun finishManualAdMark() {
+        val episode = _currentPlayingEpisode.value ?: return
+        val durationMs = episode.durationSeconds.coerceAtLeast(0L) * 1000L
+        val range = manualAdMarkSession.finish(_playbackPositionMs.value, durationMs)
+        if (range == null) {
+            _pendingManualAdStartMs.value = null
+            _sponsorSkipEvent.value = "Ad range not saved: end must be after start."
+            return
+        }
+
+        _isManualAdRangeSaving.value = true
+        viewModelScope.launch {
+            try {
+                repository.addManualAdRange(episode.id, range)
+                val updatedEpisode = repository.getEpisodeById(episode.id)
+                    ?: episode.copy(manualAdRanges = ManualAdRangeCodec.encode(
+                        ManualAdRangeCodec.decode(episode.manualAdRanges) + range
+                    ))
+                if (_currentPlayingEpisode.value?.id == episode.id) {
+                    _currentPlayingEpisode.value = updatedEpisode
+                    val manualIntervals = ManualAdSkipSelection.intervals(
+                        episode.id,
+                        ManualAdRangeCodec.decode(updatedEpisode.manualAdRanges),
+                        durationMs
+                    )
+                    _detectedTranscriptAds.value = (_detectedTranscriptAds.value + manualIntervals).distinctBy { it.id }
+                }
+                _sponsorSkipEvent.value = "Manual ad range saved for ${episode.title}."
+            } catch (error: Exception) {
+                _sponsorSkipEvent.value = "Could not save manual ad range: ${error.message.orEmpty()}"
+            } finally {
+                _isManualAdRangeSaving.value = false
+                _pendingManualAdStartMs.value = null
+            }
+        }
+    }
+
+    fun cancelManualAdMark() {
+        manualAdMarkSession.cancel()
+        _pendingManualAdStartMs.value = null
+    }
 
     // Audio Waveform Dynamics & Acoustic Ad Detection
     private val _waveformAmplitudes = MutableStateFlow<List<Float>>(emptyList())
@@ -1264,7 +1325,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                             adTimestampsSeconds = f.adTimestampsSeconds.ifEmpty { prev?.adTimestampsSeconds ?: "" },
                             chapters = f.chapters.ifEmpty { prev?.chapters ?: "" },
                             transcript = f.transcript.ifEmpty { prev?.transcript ?: "" },
-                            publishTimestamp = ts
+                            publishTimestamp = ts,
+                            manualAdRanges = ManualAdRangeCodec.preserveExisting(
+                                existing = prev?.manualAdRanges.orEmpty(),
+                                refreshed = ""
+                            )
                         )
                     }.sortedWith(compareByDescending<EpisodeEntity> { it.publishTimestamp }.thenByDescending { it.publishDate })
 
@@ -1299,6 +1364,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             // Save state of previous playing episode if it exists
             val prev = _currentPlayingEpisode.value
+            if (prev?.id != episode.id) {
+                chapterSponsorSkipGuard.reset()
+                manualAdMarkSession.reset()
+                _pendingManualAdStartMs.value = null
+            }
             if (prev != null && prev.id != episode.id) {
                 repository.updateEpisodeProgress(prev.id, _playbackPositionMs.value, prev.isCompleted)
             }
@@ -1366,7 +1436,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             startPlaybackJob()
 
             // Pre-parse transcript ads & intro music
-            val preParsedAds = keywordSpotter.parseAdIntervalsFromTranscript(currentEp.transcript)
+            val manualAdIntervals = ManualAdSkipSelection.intervals(
+                currentEp.id,
+                ManualAdRangeCodec.decode(currentEp.manualAdRanges),
+                currentEp.durationSeconds.coerceAtLeast(0L) * 1000L
+            )
+            val preParsedAds = manualAdIntervals + keywordSpotter.parseAdIntervalsFromTranscript(currentEp.transcript)
             val preParsedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
             _detectedTranscriptAds.value = preParsedAds
             if (preParsedIntro != null) {
@@ -1471,7 +1546,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         source = "Desert Ant Voz STT"
                     )
                 }
-                val combinedAdIntervals = (transcriptAds + vozSkipIntervals).distinctBy { it.id }
+                val manualAdIntervals = ManualAdSkipSelection.intervals(
+                    currentEp.id,
+                    ManualAdRangeCodec.decode(currentEp.manualAdRanges),
+                    currentEp.durationSeconds.coerceAtLeast(0L) * 1000L
+                )
+                val combinedAdIntervals = (manualAdIntervals + transcriptAds + vozSkipIntervals).distinctBy { it.id }
 
                 withContext(Dispatchers.Main) {
                     _waveformAmplitudes.value = waveform
@@ -1484,6 +1564,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     Log.i("PodcastPlayer", consoleLine)
                     System.out.println(consoleLine)
                     repository.addSyncLog("Voz AI Engine", "Echtzeit-Musteranalyse abgeschlossen: $adCount Werbesegmente für '${currentEp.title}' identifiziert.")
+                }
+
+                // Preserve manual marks added while background transcript analysis was running.
+                val latestEpisode = repository.getEpisodeById(currentEp.id)
+                if (latestEpisode != null) {
+                    currentEp = currentEp.copy(manualAdRanges = latestEpisode.manualAdRanges)
                 }
 
                 // 4. Save updated metadata to database
@@ -2172,7 +2258,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         playbackJob = null
     }
 
-    private var lastSkippedChapterTitle: String? = null
+    private val chapterSponsorSkipGuard = ChapterSponsorSkipGuard()
     private var lastSkippedAcousticAdId: String? = null
     private var lastSkippedTranscriptTimeSec: Long? = null
 
@@ -2188,8 +2274,39 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             durationMs = durationMs
         )
 
+        // Keep playback moving through the interval the listener is currently marking.
+        if (manualAdMarkSession.pendingStartMs != null || _isManualAdRangeSaving.value) return
+
         // 0. Dual-Parameter Ad Skipper: Approach A (Transcript "Sponsors" -> "And now back to the show") + Approach B (RMS Volume analysis)
         if (_isAutoAdSkipEnabled.value) {
+            val chaps = currentChapters.value
+            val sponsorChapterTarget = SponsorChapterSkipTarget.at(positionMs, chaps)
+            if (sponsorChapterTarget != null) {
+                val activeChapter = chaps.lastOrNull { it.startTimeSeconds <= currentSeconds } ?: return
+                if (chapterSponsorSkipGuard.claim(current.id, activeChapter)) {
+                    val targetMs = sponsorChapterTarget.targetMs.coerceAtMost(durationMs)
+                    val savedSecs = ((targetMs - positionMs) / 1000L).coerceAtLeast(15L)
+
+                    _adsBlockedCount.value += 1
+                    _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
+                    _playbackPositionMs.value = targetMs
+                    PodcastMediaService.seekTo(getApplication(), targetMs)
+                    _sponsorSkipEvent.value = "Auto-skipped Sponsor: ${activeChapter.title}"
+
+                    viewModelScope.launch {
+                        repository.addSyncLog(
+                            "Sponsor-Skipper Engine",
+                            "Auto-skipped sponsor chapter '${activeChapter.title}'. Jumped forward ${savedSecs}s to resume main content."
+                        )
+                        repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
+                    }
+                }
+                return
+            }
+            if (chaps.none { it.startTimeSeconds <= currentSeconds && it.isSponsorChapter() }) {
+                chapterSponsorSkipGuard.reset()
+            }
+
             val transcriptAds = _detectedTranscriptAds.value
             val activeAdInterval = transcriptAds.firstOrNull { ad ->
                 positionMs >= ad.startMs && positionMs < ad.endMs
@@ -2229,56 +2346,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
         }
 
-        // 1. Chapter-Based Sponsor & Ad Detection & Auto-Skip
-        val chaps = currentChapters.value
-        if (_isAutoAdSkipEnabled.value && chaps.isNotEmpty()) {
-            val activeIndex = chaps.indexOfLast { it.startTimeSeconds <= currentSeconds }
-            if (activeIndex in chaps.indices) {
-                val activeChapter = chaps[activeIndex]
-                val duration = activeChapter.durationSeconds ?: 60L
-                val chapterEndSeconds = activeChapter.startTimeSeconds + duration
-
-                if (activeChapter.isSponsorChapter() && currentSeconds < chapterEndSeconds) {
-                    if (lastSkippedChapterTitle != activeChapter.title) {
-                        lastSkippedChapterTitle = activeChapter.title
-
-                        // Find next non-sponsor chapter
-                        var nextTargetSec = chapterEndSeconds
-                        for (i in (activeIndex + 1) until chaps.size) {
-                            val candidate = chaps[i]
-                            if (!candidate.isSponsorChapter()) {
-                                nextTargetSec = candidate.startTimeSeconds
-                                break
-                            }
-                        }
-
-                        val targetMs = (nextTargetSec * 1000L).coerceAtMost(durationMs)
-                        val savedSecs = (nextTargetSec - currentSeconds).coerceAtLeast(15)
-
-                        _adsBlockedCount.value += 1
-                        _savedMinutes.value += ((savedSecs + 59) / 60).toInt()
-                        _playbackPositionMs.value = targetMs
-                        PodcastMediaService.seekTo(getApplication(), targetMs)
-                        _sponsorSkipEvent.value = "Auto-skipped Sponsor: ${activeChapter.title}"
-
-                        viewModelScope.launch {
-                            repository.addSyncLog(
-                                "Sponsor-Skipper Engine",
-                                "Auto-skipped sponsor chapter '${activeChapter.title}'. Jumped forward ${savedSecs}s to resume main content."
-                            )
-                            repository.updateEpisodeProgress(current.id, targetMs, targetMs >= durationMs)
-                        }
-                        return
-                    }
-                } else {
-                    if (!activeChapter.isSponsorChapter()) {
-                        lastSkippedChapterTitle = null
-                    }
-                }
-            }
-        }
-
-        // 2. Audio-Waveform Anomaly & Dynamic Audio Ad Insertion (DAI) Detection
+        // 1. Audio-Waveform Anomaly & Dynamic Audio Ad Insertion (DAI) Detection
         val acousticAdHit = audioWaveDetector.findAcousticAdAtPosition(
             positionMs = positionMs,
             segments = _acousticAdSegments.value

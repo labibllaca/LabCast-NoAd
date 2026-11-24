@@ -47,6 +47,9 @@ interface PodcastDao {
     @Update
     suspend fun updateEpisode(episode: EpisodeEntity)
 
+    @Query("UPDATE episodes SET manualAdRanges = :encodedRanges WHERE id = :episodeId")
+    suspend fun updateManualAdRanges(episodeId: String, encodedRanges: String)
+
     @Query("UPDATE episodes SET playbackPositionMs = :positionMs, isCompleted = :isCompleted WHERE id = :episodeId")
     suspend fun updatePlaybackProgress(episodeId: String, positionMs: Long, isCompleted: Boolean)
 

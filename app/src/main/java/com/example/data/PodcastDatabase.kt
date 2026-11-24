@@ -4,12 +4,20 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class], version = 6, exportSchema = false)
+@Database(entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class], version = 7, exportSchema = false)
 abstract class PodcastDatabase : RoomDatabase() {
     abstract fun podcastDao(): PodcastDao
 
     companion object {
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE episodes ADD COLUMN manualAdRanges TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         @Volatile
         private var INSTANCE: PodcastDatabase? = null
 
@@ -20,6 +28,7 @@ abstract class PodcastDatabase : RoomDatabase() {
                     PodcastDatabase::class.java,
                     "podcast_database"
                 )
+                .addMigrations(MIGRATION_6_7)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()

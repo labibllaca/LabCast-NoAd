@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.labcast.podcast"
     minSdk = 24
     targetSdk = 36
-    versionCode = 22
-    versionName = "1.3.9"
+    versionCode = 24
+    versionName = "1.4.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -127,7 +127,7 @@ dependencies {
   implementation(libs.okhttp)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
-  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.0")
+  implementation("com.microsoft.onnxruntime:onnxruntime-android:1.32.0")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

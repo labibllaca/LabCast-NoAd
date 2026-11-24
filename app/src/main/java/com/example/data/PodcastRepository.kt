@@ -43,6 +43,39 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.updateEpisode(episode.copy(publishTimestamp = ts))
     }
 
+    suspend fun addManualAdRange(episodeId: String, range: ManualAdRange) {
+        val episode = podcastDao.getEpisodeById(episodeId) ?: return
+        val durationMs = episode.durationSeconds.coerceAtLeast(0L) * 1000L
+        val clamped = ManualAdRangeCodec.clamp(range, durationMs) ?: return
+        val existing = ManualAdRangeCodec.decode(episode.manualAdRanges)
+        if (clamped in existing) return
+
+        podcastDao.updateManualAdRanges(
+            episodeId = episodeId,
+            encodedRanges = ManualAdRangeCodec.encode(existing + clamped)
+        )
+    }
+
+    suspend fun updateManualAdRange(episodeId: String, target: ManualAdRange, replacement: ManualAdRange) {
+        val episode = podcastDao.getEpisodeById(episodeId) ?: return
+        val durationMs = episode.durationSeconds.coerceAtLeast(0L) * 1000L
+        val clamped = ManualAdRangeCodec.clamp(replacement, durationMs) ?: return
+        val existing = ManualAdRangeCodec.decode(episode.manualAdRanges)
+        if (target !in existing) return
+        val encoded = ManualAdRangeCodec.encode(existing.map { if (it == target) clamped else it }.distinct())
+        if (encoded == episode.manualAdRanges) return
+        podcastDao.updateManualAdRanges(episodeId, encoded)
+    }
+
+    suspend fun deleteManualAdRange(episodeId: String, target: ManualAdRange) {
+        val episode = podcastDao.getEpisodeById(episodeId) ?: return
+        val existing = ManualAdRangeCodec.decode(episode.manualAdRanges)
+        if (target !in existing) return
+        val encoded = ManualAdRangeCodec.encode(ManualAdRangeEditor.remove(existing, target))
+        if (encoded == episode.manualAdRanges) return
+        podcastDao.updateManualAdRanges(episodeId, encoded)
+    }
+
     suspend fun updatePodcast(podcast: PodcastEntity) {
         podcastDao.updatePodcast(podcast)
     }

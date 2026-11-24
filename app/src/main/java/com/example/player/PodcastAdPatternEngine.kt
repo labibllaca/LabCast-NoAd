@@ -1,10 +1,12 @@
 package com.example.player
 
 import com.example.data.EpisodeEntity
+import com.example.data.ManualAdRangeCodec
 import com.example.data.TranscriptParser
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToLong
 
 /**
  * Show-Level Historical Ad Pattern Learning & Prediction Engine.
@@ -32,6 +34,13 @@ data class ShowAdTemplate(
 
 class PodcastAdPatternEngine {
 
+    private data class ManualRangeSample(
+        val episodeId: String,
+        val startRatio: Float,
+        val endRatio: Float,
+        val durationMs: Long
+    )
+
     /**
      * Learns recurring ad timing templates across historical episodes of the same podcast show.
      */
@@ -43,9 +52,25 @@ class PodcastAdPatternEngine {
         var preRollHits = 0
         val preRollDurations = mutableListOf<Long>()
         val midRollRatios = mutableListOf<Pair<Float, Float>>()
+        val manualSlotClusters = mutableListOf<MutableList<ManualRangeSample>>()
 
         showEpisodes.forEach { ep ->
             val totalMs = max(100000L, ep.durationSeconds * 1000L)
+
+            ManualAdRangeCodec.decode(ep.manualAdRanges).forEach { range ->
+                val startRatio = (range.startMs.toFloat() / totalMs).coerceIn(0f, 0.99f)
+                val endRatio = (range.endMs.toFloat() / totalMs).coerceIn(startRatio, 1f)
+                val sample = ManualRangeSample(ep.id, startRatio, endRatio, range.endMs - range.startMs)
+                val cluster = manualSlotClusters
+                    .filter { samples -> abs(samples.map { it.startRatio }.average().toFloat() - startRatio) <= 0.08f }
+                    .minByOrNull { samples -> abs(samples.map { it.startRatio }.average().toFloat() - startRatio) }
+
+                if (cluster == null) {
+                    manualSlotClusters.add(mutableListOf(sample))
+                } else if (cluster.none { it.episodeId == ep.id }) {
+                    cluster.add(sample)
+                }
+            }
 
             // 1. Check description or chapters for pre-roll / sponsors
             val descLower = ep.description.lowercase(Locale.ROOT)
@@ -111,6 +136,21 @@ class PodcastAdPatternEngine {
             )
         }
 
+        manualSlotClusters.forEach { samples ->
+            val supportingEpisodeCount = samples.map { it.episodeId }.distinct().size
+            if (supportingEpisodeCount >= 2) {
+                compiledMidSlots.add(
+                    LearnedAdSlot(
+                        slotType = "MANUAL_LEARNED",
+                        startRatio = samples.map { it.startRatio }.average().toFloat(),
+                        endRatio = samples.map { it.endRatio }.average().toFloat(),
+                        defaultDurationMs = samples.map { it.durationMs }.average().toLong(),
+                        occurrenceCount = supportingEpisodeCount
+                    )
+                )
+            }
+        }
+
         val isPreRollDominant = preRollHits > 0 || (showEpisodes.size > 0 && preRollHits.toFloat() / showEpisodes.size >= 0.3f)
 
         return ShowAdTemplate(
@@ -150,6 +190,24 @@ class PodcastAdPatternEngine {
         // 2. Mid-Roll Ads
         template.midRollSlots.forEachIndexed { idx, slot ->
             val startMs = (totalMs * slot.startRatio).toLong()
+            if (slot.slotType == "MANUAL_LEARNED") {
+                val manualStartMs = (totalMs * slot.startRatio).roundToLong().coerceIn(0L, totalMs)
+                val endMs = (totalMs * slot.endRatio).roundToLong().coerceAtMost(totalMs)
+                if (endMs > manualStartMs) {
+                    skips.add(
+                        SkipRange(
+                            id = "pattern_manual_${episode.id}_${idx}_$manualStartMs",
+                            startMs = manualStartMs,
+                            endMs = endMs,
+                            label = "Ad Pattern Learned from Manual Marks",
+                            confidence = 0.80f,
+                            isAutoSkipEligible = true
+                        )
+                    )
+                }
+                return@forEachIndexed
+            }
+
             val endMs = (totalMs * slot.endRatio).toLong().coerceAtLeast(startMs + 45000L)
             if (startMs in 30000L..(totalMs - 60000L)) {
                 skips.add(
