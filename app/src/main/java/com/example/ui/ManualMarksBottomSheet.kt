@@ -49,7 +49,7 @@ fun ManualMarksBottomSheet(
         containerColor = colors.cardBackground,
         dragHandle = { BottomSheetDefaults.DragHandle(color = colors.itemBorder) },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = Modifier.testTag("manual_marks_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "manual_marks_sheet")
     ) {
         Column(
             modifier = Modifier
@@ -82,7 +82,10 @@ fun ManualMarksBottomSheet(
                         fontSize = 10.sp
                     )
                 }
-                IconButton(onClick = onDismiss) {
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.testTag("manual_marks_dismiss")
+                ) {
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Close",

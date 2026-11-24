@@ -1,5 +1,6 @@
 package com.example.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -10,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import com.example.data.ManualAdRange
 import com.example.ui.theme.MyApplicationTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,6 +74,29 @@ class ManualMarksBottomSheetTest {
         }
 
         composeRule.onNodeWithTag("manual_marks_empty").assertIsDisplayed()
+    }
+
+    @Test
+    fun landscapeSheetStaysVisibleAndDismissible() {
+        var dismissed = false
+        composeRule.setContent {
+            CompositionLocalProvider(LocalIsLandscape provides true) {
+                MyApplicationTheme {
+                    ManualMarksBottomSheet(
+                        ranges = listOf(first),
+                        durationMs = 3_600_000L,
+                        formatTime = ::formatTime,
+                        onNudge = { _: ManualAdRange, _: Boolean, _: Long -> },
+                        onDelete = {},
+                        onDismiss = { dismissed = true }
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag("manual_marks_sheet").assertIsDisplayed()
+        composeRule.onNodeWithTag("manual_marks_dismiss").performClick()
+        assertTrue(dismissed)
     }
 
     private fun formatTime(ms: Long): String =

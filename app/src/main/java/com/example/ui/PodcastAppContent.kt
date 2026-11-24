@@ -4534,7 +4534,7 @@ fun EpisodeDescriptionBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = Modifier.testTag("episode_description_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "episode_description_bottom_sheet")
     ) {
         Column(
             modifier = Modifier
@@ -4718,7 +4718,7 @@ fun TranscriptBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = Modifier.testTag("transcript_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "transcript_bottom_sheet")
     ) {
         Column(
             modifier = Modifier
@@ -5379,7 +5379,7 @@ fun ChaptersBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = Modifier.testTag("chapters_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "chapters_bottom_sheet")
     ) {
         Column(
             modifier = Modifier
@@ -5642,7 +5642,7 @@ fun SleepTimerBottomSheet(
             BottomSheetDefaults.DragHandle(color = colors.itemBorder)
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        modifier = Modifier.testTag("sleep_timer_bottom_sheet")
+        modifier = LandscapeLayout.sheetModifier(LocalIsLandscape.current, "sleep_timer_bottom_sheet")
     ) {
         Column(
             modifier = Modifier

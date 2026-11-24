@@ -54,6 +54,11 @@ object LandscapeLayout {
 
     fun sheetMaxWidth(isLandscape: Boolean): Dp = if (isLandscape) 600.dp else Dp.Unspecified
 
+    fun sheetModifier(isLandscape: Boolean, tag: String): Modifier =
+        Modifier
+            .testTag(tag)
+            .then(if (isLandscape) Modifier.widthIn(max = sheetMaxWidth(true)) else Modifier)
+
     /** Portrait keeps its original horizontal padding; landscape gets compact padding and a capped width. */
     fun listScreenModifier(isLandscape: Boolean, portraitHorizontal: Dp = 16.dp): Modifier =
         if (isLandscape) {
