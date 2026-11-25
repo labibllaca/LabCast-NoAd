@@ -53,6 +53,9 @@ interface PodcastDao {
     @Query("UPDATE episodes SET playbackPositionMs = :positionMs, isCompleted = :isCompleted WHERE id = :episodeId")
     suspend fun updatePlaybackProgress(episodeId: String, positionMs: Long, isCompleted: Boolean)
 
+    @Query("UPDATE episodes SET lastPlayedAt = :timestamp WHERE id = :episodeId")
+    suspend fun updateLastPlayedAt(episodeId: String, timestamp: Long)
+
     @Query("UPDATE episodes SET playbackPositionMs = 0, isCompleted = 0")
     suspend fun clearAllHistory()
 

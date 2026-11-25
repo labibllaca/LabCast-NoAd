@@ -26,6 +26,10 @@ class PodcastRepository(private val podcastDao: PodcastDao) {
         podcastDao.updatePlaybackProgress(episodeId, positionMs, isCompleted)
     }
 
+    suspend fun updateLastPlayedAt(episodeId: String, timestamp: Long) {
+        podcastDao.updateLastPlayedAt(episodeId, timestamp)
+    }
+
     suspend fun clearAllHistory() {
         podcastDao.clearAllHistory()
     }

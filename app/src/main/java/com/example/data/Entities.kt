@@ -37,7 +37,9 @@ data class EpisodeEntity(
     val publishTimestamp: Long = 0L,
     val downloadTimestamp: Long = 0L,
     @androidx.room.ColumnInfo(defaultValue = "''")
-    val manualAdRanges: String = ""
+    val manualAdRanges: String = "",
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val lastPlayedAt: Long = 0L
 )
 
 fun EpisodeEntity.getEffectiveTimestamp(): Long {
