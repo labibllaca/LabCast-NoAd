@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.EpisodeEntity
 import com.example.data.PodcastDatabase
+import com.example.data.resetPodcastDatabaseSingleton
 import com.example.data.TranscriptParser
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -30,10 +31,16 @@ class TranscriptUnmarkViewModelTest {
     private val dispatcher = StandardTestDispatcher()
 
     @Before
-    fun setUp() = Dispatchers.setMain(dispatcher)
+    fun setUp() {
+        resetPodcastDatabaseSingleton()
+        Dispatchers.setMain(dispatcher)
+    }
 
     @After
-    fun tearDown() = Dispatchers.resetMain()
+    fun tearDown() {
+        resetPodcastDatabaseSingleton()
+        Dispatchers.resetMain()
+    }
 
     @Test
     fun tappingUnmarkPersistsOverrideInTranscript() = runTest {

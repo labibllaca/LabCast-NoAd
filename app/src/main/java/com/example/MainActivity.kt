@@ -1,27 +1,34 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
 import coil.ImageLoader
+import com.example.shortcuts.AppShortcuts
 import com.example.ui.LandscapeLayout
 import com.example.ui.LocalIsLandscape
 import com.example.ui.PodcastAppContent
 import com.example.ui.PodcastViewModel
 import com.example.ui.theme.MyApplicationTheme
+import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
 
 class MainActivity : ComponentActivity() {
+  private val pendingShortcutEpisodeId = MutableStateFlow<String?>(null)
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    pendingShortcutEpisodeId.value = intent?.getStringExtra(AppShortcuts.EXTRA_EPISODE_ID)
 
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
       if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -54,12 +61,24 @@ class MainActivity : ComponentActivity() {
       val isLandscape = LandscapeLayout.isLandscape(LocalConfiguration.current)
       val viewModel: PodcastViewModel = viewModel()
       val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+      val shortcutEpisodeId by pendingShortcutEpisodeId.collectAsStateWithLifecycle()
+      LaunchedEffect(shortcutEpisodeId) {
+        val id = shortcutEpisodeId ?: return@LaunchedEffect
+        pendingShortcutEpisodeId.value = null
+        viewModel.playEpisodeById(id)
+      }
       CompositionLocalProvider(LocalIsLandscape provides isLandscape) {
         MyApplicationTheme(themeMode = themeMode) {
           PodcastAppContent(viewModel = viewModel)
         }
       }
     }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    pendingShortcutEpisodeId.value = intent.getStringExtra(AppShortcuts.EXTRA_EPISODE_ID)
   }
 }
 

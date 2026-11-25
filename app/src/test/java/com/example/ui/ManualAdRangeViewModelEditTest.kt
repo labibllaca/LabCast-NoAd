@@ -6,6 +6,7 @@ import com.example.data.EpisodeEntity
 import com.example.data.ManualAdRange
 import com.example.data.ManualAdRangeCodec
 import com.example.data.PodcastDatabase
+import com.example.data.resetPodcastDatabaseSingleton
 import com.example.player.AdSkipInterval
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ class ManualAdRangeViewModelEditTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
+        resetPodcastDatabaseSingleton()
         val app = ApplicationProvider.getApplicationContext<Application>()
         dao = PodcastDatabase.getDatabase(app).podcastDao()
         viewModel = PodcastViewModel(app)
@@ -42,6 +44,7 @@ class ManualAdRangeViewModelEditTest {
 
     @After
     fun tearDown() {
+        resetPodcastDatabaseSingleton()
         Dispatchers.resetMain()
     }
 

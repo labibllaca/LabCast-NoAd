@@ -20,6 +20,8 @@ import com.example.player.ManualAdMarkSession
 import com.example.player.ManualAdSkipSelection
 import com.example.player.VozTranscriber
 import com.example.service.PodcastMediaService
+import com.example.shortcuts.AppShortcuts
+import com.example.shortcuts.RecentEpisodes
 import com.example.util.EpisodeDownloader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -902,6 +904,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }.sortedByDescending { it.episode.playbackPositionMs }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val recentEpisodes: StateFlow<List<EpisodeEntity>> = repository.allEpisodes
+        .map { RecentEpisodes.select(it) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     fun clearAllHistory() {
         viewModelScope.launch {
             repository.clearAllHistory()
@@ -997,6 +1003,13 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             repository.populateInitialDataIfNeeded(getApplication())
             repository.validateAndCleanupCorruptDownloads(getApplication())
             checkAndCleanupExpiredDownloads()
+        }
+
+        viewModelScope.launch {
+            recentEpisodes
+                .map { RecentEpisodes.shortcutSpecs(it) }
+                .distinctUntilChanged()
+                .collect { AppShortcuts.publish(getApplication(), it) }
         }
     }
 
@@ -1331,6 +1344,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     private var metadataRefreshJob: kotlinx.coroutines.Job? = null
 
     // Media Player control
+    fun playEpisodeById(episodeId: String, openPlayer: Boolean = true) {
+        viewModelScope.launch {
+            repository.getEpisodeById(episodeId)?.let { playEpisode(it, openPlayer) }
+        }
+    }
+
     fun playEpisode(episode: EpisodeEntity, openPlayer: Boolean = true) {
         if (openPlayer) {
             _isPlayerExpanded.value = true
@@ -1349,6 +1368,9 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
 
             var currentEp = episode
+            val playedAt = System.currentTimeMillis()
+            repository.updateLastPlayedAt(currentEp.id, playedAt)
+            currentEp = currentEp.copy(lastPlayedAt = playedAt)
             _currentPlayingEpisode.value = currentEp
 
             // Smart Context Rewind:
