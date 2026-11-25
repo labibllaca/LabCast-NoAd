@@ -36,6 +36,17 @@ class AppShortcutsTest {
     }
 
     @Test
+    fun publishReplacesThePreviousSet() {
+        AppShortcuts.publish(context, fiveSpecs())
+        assertEquals(3, ShortcutManagerCompat.getDynamicShortcuts(context).size)
+
+        AppShortcuts.publish(context, listOf(fiveSpecs().first()))
+
+        val remaining = ShortcutManagerCompat.getDynamicShortcuts(context)
+        assertEquals(listOf("episode_a"), remaining.map { it.id })
+    }
+
+    @Test
     fun clampsToTheLauncherLimit() {
         val manager = context.getSystemService(ShortcutManager::class.java)
         Shadows.shadowOf(manager).setMaxShortcutCountPerActivity(2)

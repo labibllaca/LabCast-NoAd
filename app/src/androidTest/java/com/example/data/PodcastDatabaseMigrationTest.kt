@@ -27,6 +27,7 @@ class PodcastDatabaseMigrationTest {
                 null,
                 SQLiteDatabase.OPEN_READWRITE
             )
+            legacyDatabase.execSQL("ALTER TABLE episodes DROP COLUMN lastPlayedAt")
             legacyDatabase.execSQL("ALTER TABLE episodes DROP COLUMN manualAdRanges")
             legacyDatabase.execSQL("PRAGMA user_version = 6")
             legacyDatabase.close()

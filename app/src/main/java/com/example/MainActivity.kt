@@ -13,7 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.Coil
 import coil.ImageLoader
-import com.example.shortcuts.AppShortcuts
+import com.example.shortcuts.ShortcutIntents
 import com.example.ui.LandscapeLayout
 import com.example.ui.LocalIsLandscape
 import com.example.ui.PodcastAppContent
@@ -28,7 +28,9 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
-    pendingShortcutEpisodeId.value = intent?.getStringExtra(AppShortcuts.EXTRA_EPISODE_ID)
+    if (savedInstanceState == null) {
+      ShortcutIntents.consume(intent)?.let { pendingShortcutEpisodeId.value = it }
+    }
 
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
       if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -78,7 +80,7 @@ class MainActivity : ComponentActivity() {
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
-    pendingShortcutEpisodeId.value = intent.getStringExtra(AppShortcuts.EXTRA_EPISODE_ID)
+    ShortcutIntents.consume(intent)?.let { pendingShortcutEpisodeId.value = it }
   }
 }
 

@@ -1006,7 +1006,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
-            recentEpisodes
+            repository.allEpisodes
                 .map { RecentEpisodes.shortcutSpecs(it) }
                 .distinctUntilChanged()
                 .collect { AppShortcuts.publish(getApplication(), it) }
@@ -1305,20 +1305,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                             durationSeconds = if (f.durationSeconds > 0) f.durationSeconds else (prev?.durationSeconds ?: 1800L),
                             publishDate = f.publishDate,
                             audioUrl = f.audioUrl.ifEmpty { prev?.audioUrl ?: "" },
-                            isDownloaded = prev?.isDownloaded ?: false,
-                            downloadLocalPath = prev?.downloadLocalPath,
-                            playbackPositionMs = prev?.playbackPositionMs ?: 0L,
-                            isCompleted = prev?.isCompleted ?: false,
-                            isFavorite = prev?.isFavorite ?: false,
-                            adTimestampsSeconds = f.adTimestampsSeconds.ifEmpty { prev?.adTimestampsSeconds ?: "" },
-                            chapters = f.chapters.ifEmpty { prev?.chapters ?: "" },
-                            transcript = f.transcript.ifEmpty { prev?.transcript ?: "" },
-                            publishTimestamp = ts,
-                            manualAdRanges = ManualAdRangeCodec.preserveExisting(
-                                existing = prev?.manualAdRanges.orEmpty(),
-                                refreshed = ""
-                            )
-                        )
+                            adTimestampsSeconds = f.adTimestampsSeconds,
+                            chapters = f.chapters,
+                            transcript = f.transcript,
+                            publishTimestamp = ts
+                        ).withPreservedStateFrom(prev)
                     }.sortedWith(compareByDescending<EpisodeEntity> { it.publishTimestamp }.thenByDescending { it.publishDate })
 
                     repository.insertEpisodes(mergedEpisodes)
