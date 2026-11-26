@@ -3,7 +3,8 @@ package com.example.data
 import android.app.Application
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.example.player.VozTranscriber
+import com.example.player.VozCueDetector
+import com.example.player.VozScanPlanner
 import com.example.ui.PodcastViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -54,10 +55,10 @@ class MockDataRemovalTest {
             audioUrl = "https://example.invalid/audio.mp3"
         )
 
-        val result = VozTranscriber().transcribeAudioAndDetectSkips(episode, emptyList())
+        val windows = VozScanPlanner.plan(episode.durationSeconds * 1_000L, emptyList())
 
-        assertTrue(result.sentences.isEmpty())
-        assertTrue(result.skipRanges.isEmpty())
+        assertTrue(windows.isNotEmpty())
+        assertTrue(VozCueDetector.detect(emptyList()).isEmpty())
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

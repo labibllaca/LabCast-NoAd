@@ -16,7 +16,8 @@ data class AdSkipInterval(
     val resumeWord: String,
     val confidence: Float, // 0.0 to 1.0
     val source: String, // e.g. "Approach A (Transcript)", "Approach B (Acoustic RMS)", "Approach C (Keyword Spotter)"
-    val description: String = "Ad from '$triggerWord' to '$resumeWord'"
+    val description: String = "Ad from '$triggerWord' to '$resumeWord'",
+    val isAutoSkipEligible: Boolean = true
 ) {
     val durationMs: Long get() = max(0L, endMs - startMs)
     val durationSeconds: Long get() = durationMs / 1000

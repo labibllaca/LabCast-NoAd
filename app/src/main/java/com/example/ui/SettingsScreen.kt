@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1518,6 +1519,33 @@ fun SettingsScreen(viewModel: PodcastViewModel) {
                         }
                     }
                 }
+            }
+        }
+
+        // Voz model status and the attribution required by the Desert Ant license.
+        item {
+            val vozModelStatus by viewModel.vozModelStatus.collectAsStateWithLifecycle()
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = vozModelStatus,
+                    color = colors.textMuted,
+                    fontSize = 11.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Powered by Desert Ant Labs",
+                    color = CyberGreen,
+                    fontSize = 12.sp,
+                    textDecoration = TextDecoration.Underline,
+                    modifier = Modifier.clickable {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse("https://desertant.com"))
+                        )
+                    }
+                )
             }
         }
     }

@@ -18,7 +18,8 @@ import com.example.player.SponsorChapterSkipTarget
 import com.example.player.ChapterSponsorSkipGuard
 import com.example.player.ManualAdMarkSession
 import com.example.player.ManualAdSkipSelection
-import com.example.player.VozTranscriber
+import com.example.player.AutoSkipSelection
+import com.example.player.VozScanController
 import com.example.service.PodcastMediaService
 import com.example.shortcuts.AppShortcuts
 import com.example.shortcuts.RecentEpisodes
@@ -361,6 +362,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     // Phase 3 & 4: Transcript Ad Intervals ("Sponsors" -> "And now back to the show")
     private val _detectedTranscriptAds = MutableStateFlow<List<AdSkipInterval>>(emptyList())
     val detectedTranscriptAds: StateFlow<List<AdSkipInterval>> = _detectedTranscriptAds.asStateFlow()
+    private val _vozTranscript = MutableStateFlow("")
+    val vozTranscript: StateFlow<String> = _vozTranscript.asStateFlow()
+    private val _vozModelStatus = MutableStateFlow("Voz: nicht heruntergeladen")
+    val vozModelStatus: StateFlow<String> = _vozModelStatus.asStateFlow()
 
     private var lastSkippedTranscriptAdId: String? = null
 
@@ -1507,20 +1512,27 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val detectedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
                     ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
 
-                // 3b. On-Device Voz Tiny STT Analysis & Show-Pattern Learning (Concurrent Background Analysis while Playing)
-                val vozTranscriber = VozTranscriber()
-                vozTranscriber.loadVozModel(getApplication())
+                // 3b. Real on-device Voz scanning of a few predicted windows. Playback
+                // never waits for this; results arrive window by window.
                 val siblingEpisodes = repository.getEpisodesForPodcast(currentEp.podcastId).firstOrNull() ?: emptyList()
-                val vozResult = vozTranscriber.transcribeAudioAndDetectSkips(currentEp, siblingEpisodes)
-
-                // If episode transcript was empty or raw, populate it with Voz STT generated sentence transcription
-                if (currentEp.transcript.isBlank() && vozResult.sentences.isNotEmpty()) {
-                    val serializedTranscript = vozResult.sentences.joinToString("\n") { sentence ->
-                        val timeFormatted = TranscriptSegment(sentence.startMs / 1000L, sentence.speaker, sentence.text).formattedTime()
-                        val sponsorTag = if (sentence.isSponsor) " [Sponsor Break]" else ""
-                        "$timeFormatted [${sentence.speaker}$sponsorTag] ${sentence.text}"
+                val vozController = VozScanController(
+                    context = getApplication(),
+                    store = RoomAsrWindowStore(database.asrWindowDao())
+                )
+                val vozResult = vozController.scan(currentEp, siblingEpisodes) { progress ->
+                    viewModelScope.launch(Dispatchers.Main) {
+                        _isSttScanning.value = true
+                        _vozModelStatus.value = "Voz: bereit"
+                        _vozTranscript.value = progress.text
+                        Log.i(
+                            "PodcastPlayer",
+                            "Voz: Fenster ${progress.completed}/${progress.total}: " +
+                                "${progress.wordCount} Wörter, ${progress.cueCount} Cues."
+                        )
                     }
-                    currentEp = currentEp.copy(transcript = serializedTranscript)
+                }
+                withContext(Dispatchers.Main) {
+                    _isSttScanning.value = false
                 }
 
                 val vozSkipIntervals = vozResult.skipRanges.map { skip ->
@@ -1529,9 +1541,10 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                         startMs = skip.startMs,
                         endMs = skip.endMs,
                         triggerWord = "Voz: ${skip.label}",
-                        resumeWord = "Hauptteil",
+                        resumeWord = if (skip.isAutoSkipEligible) "Hauptteil" else "—",
                         confidence = skip.confidence,
-                        source = "Desert Ant Voz STT"
+                        source = "Desert Ant Voz STT",
+                        isAutoSkipEligible = skip.isAutoSkipEligible
                     )
                 }
                 val manualAdIntervals = ManualAdSkipSelection.intervals(
@@ -1548,10 +1561,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     _detectedIntroMusic.value = detectedIntro
 
                     val adCount = combinedAdIntervals.size
-                    val consoleLine = "[VOZ CONSOLE] Stream playback active. Background audio analysis & show-pattern learning completed for '${currentEp.title}' ($adCount sponsor/ad segments identified)."
-                    Log.i("PodcastPlayer", consoleLine)
-                    System.out.println(consoleLine)
-                    repository.addSyncLog("Voz AI Engine", "Echtzeit-Musteranalyse abgeschlossen: $adCount Werbesegmente für '${currentEp.title}' identifiziert.")
+                    val statusLine = "Voz: echte Fenster-Transkription abgeschlossen für '${currentEp.title}' ($adCount Werbesegmente)."
+                    Log.i("PodcastPlayer", statusLine)
+                    viewModelScope.launch {
+                        repository.addSyncLog("Voz", statusLine)
+                    }
                 }
 
                 // Preserve manual marks added while background transcript analysis was running.
@@ -2302,9 +2316,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val transcriptAds = _detectedTranscriptAds.value
-            val activeAdInterval = transcriptAds.firstOrNull { ad ->
-                positionMs >= ad.startMs && positionMs < ad.endMs
-            }
+            val activeAdInterval = AutoSkipSelection.select(transcriptAds, positionMs)
 
             if (activeAdInterval != null) {
                 if (lastSkippedTranscriptAdId != activeAdInterval.id) {
@@ -2333,7 +2345,9 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     return
                 }
             } else if (lastSkippedTranscriptAdId != null) {
-                val stillInAny = transcriptAds.any { positionMs >= it.startMs && positionMs < it.endMs }
+                val stillInAny = transcriptAds.any {
+                    it.isAutoSkipEligible && positionMs >= it.startMs && positionMs < it.endMs
+                }
                 if (!stillInAny) {
                     lastSkippedTranscriptAdId = null
                 }
