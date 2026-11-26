@@ -24,9 +24,10 @@ object EpisodeDownloader {
         context: Context,
         url: String,
         episodeId: String,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        destinationDirName: String = "podcasts"
     ): String? = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, "podcasts")
+        val dir = File(context.filesDir, destinationDirName)
         if (!dir.exists()) {
             dir.mkdirs()
         }

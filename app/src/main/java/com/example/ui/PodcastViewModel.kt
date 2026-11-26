@@ -1982,10 +1982,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val filePath = EpisodeDownloader.downloadToFile(
                     context = getApplication(),
                     url = episode.audioUrl,
-                    episodeId = episode.id
-                ) { progress ->
-                    _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
-                }
+                    episodeId = episode.id,
+                    onProgress = { progress ->
+                        _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
+                    }
+                )
 
                 if (EpisodeDownloader.isValidDownloadedFile(filePath)) {
                     val updated = episode.copy(
@@ -2029,10 +2030,11 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             val filePath = EpisodeDownloader.downloadToFile(
                 context = getApplication(),
                 url = episode.audioUrl,
-                episodeId = episode.id
-            ) { progress ->
-                _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
-            }
+                episodeId = episode.id,
+                onProgress = { progress ->
+                    _downloadProgressMap.value = _downloadProgressMap.value + (episode.id to progress)
+                }
+            )
 
             // Remove from progress tracker
             _downloadProgressMap.value = _downloadProgressMap.value - episode.id
