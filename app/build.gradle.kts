@@ -18,8 +18,8 @@ android {
     minSdk = 24
     targetSdk = 36
     // Bump versionCode and versionName for every change before committing.
-    versionCode = 35
-    versionName = "1.6.0"
+    versionCode = 36
+    versionName = "1.6.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -85,6 +85,8 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
+  implementation(platform("ai.desertant:bom:6.0.0"))
+  implementation("ai.desertant:voz")
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
