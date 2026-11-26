@@ -19,6 +19,7 @@ import com.example.player.ChapterSponsorSkipGuard
 import com.example.player.ManualAdMarkSession
 import com.example.player.ManualAdSkipSelection
 import com.example.player.AutoSkipSelection
+import com.example.player.SkipRange
 import com.example.player.VozScanController
 import com.example.service.PodcastMediaService
 import com.example.shortcuts.AppShortcuts
@@ -366,6 +367,8 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
     val vozTranscript: StateFlow<String> = _vozTranscript.asStateFlow()
     private val _vozModelStatus = MutableStateFlow("Voz: nicht heruntergeladen")
     val vozModelStatus: StateFlow<String> = _vozModelStatus.asStateFlow()
+    private val _isVozScanning = MutableStateFlow(false)
+    val isVozScanning: StateFlow<Boolean> = _isVozScanning.asStateFlow()
 
     private var lastSkippedTranscriptAdId: String? = null
 
@@ -1339,6 +1342,19 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
 
     private var metadataRefreshJob: kotlinx.coroutines.Job? = null
 
+    private fun vozIntervals(skips: List<SkipRange>): List<AdSkipInterval> = skips.map { skip ->
+        AdSkipInterval(
+            id = skip.id,
+            startMs = skip.startMs,
+            endMs = skip.endMs,
+            triggerWord = "Voz: ${skip.label}",
+            resumeWord = if (skip.isAutoSkipEligible) "Hauptteil" else "—",
+            confidence = skip.confidence,
+            source = "Desert Ant Voz STT",
+            isAutoSkipEligible = skip.isAutoSkipEligible
+        )
+    }
+
     // Media Player control
     fun playEpisodeById(episodeId: String, openPlayer: Boolean = true) {
         viewModelScope.launch {
@@ -1512,6 +1528,12 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                 val detectedIntro = keywordSpotter.detectIntroMusic(currentEp.podcastTitle, currentEp.transcript, currentEp.chapters)
                     ?: audioWaveDetector.detectMusicIntroAcoustics(currentEp.podcastTitle, currentEp.id, currentEp.durationSeconds)
 
+                val manualAdIntervals = ManualAdSkipSelection.intervals(
+                    currentEp.id,
+                    ManualAdRangeCodec.decode(currentEp.manualAdRanges),
+                    currentEp.durationSeconds.coerceAtLeast(0L) * 1000L
+                )
+
                 // 3b. Real on-device Voz scanning of a few predicted windows. Playback
                 // never waits for this; results arrive window by window.
                 val siblingEpisodes = repository.getEpisodesForPodcast(currentEp.podcastId).firstOrNull() ?: emptyList()
@@ -1519,40 +1541,31 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
                     context = getApplication(),
                     store = RoomAsrWindowStore(database.asrWindowDao())
                 )
-                val vozResult = vozController.scan(currentEp, siblingEpisodes) { progress ->
-                    viewModelScope.launch(Dispatchers.Main) {
-                        _isSttScanning.value = true
-                        _vozModelStatus.value = "Voz: bereit"
-                        _vozTranscript.value = progress.text
-                        Log.i(
-                            "PodcastPlayer",
-                            "Voz: Fenster ${progress.completed}/${progress.total}: " +
-                                "${progress.wordCount} Wörter, ${progress.cueCount} Cues."
-                        )
+                val vozResult = try {
+                    vozController.scan(currentEp, siblingEpisodes) { progress ->
+                        viewModelScope.launch(Dispatchers.Main) {
+                            _isVozScanning.value = true
+                            _vozModelStatus.value = "Voz: bereit"
+                            _vozTranscript.value = progress.text
+                            _detectedTranscriptAds.value = (
+                                manualAdIntervals + transcriptAds + vozIntervals(progress.skipRanges)
+                                ).distinctBy { it.id }
+                            Log.i(
+                                "PodcastPlayer",
+                                "Voz: Fenster ${progress.completed}/${progress.total}: " +
+                                    "${progress.wordCount} Wörter, ${progress.cueCount} Cues."
+                            )
+                        }
+                    }
+                } finally {
+                    withContext(Dispatchers.Main) {
+                        _isVozScanning.value = false
                     }
                 }
-                withContext(Dispatchers.Main) {
-                    _isSttScanning.value = false
-                }
 
-                val vozSkipIntervals = vozResult.skipRanges.map { skip ->
-                    AdSkipInterval(
-                        id = skip.id,
-                        startMs = skip.startMs,
-                        endMs = skip.endMs,
-                        triggerWord = "Voz: ${skip.label}",
-                        resumeWord = if (skip.isAutoSkipEligible) "Hauptteil" else "—",
-                        confidence = skip.confidence,
-                        source = "Desert Ant Voz STT",
-                        isAutoSkipEligible = skip.isAutoSkipEligible
-                    )
-                }
-                val manualAdIntervals = ManualAdSkipSelection.intervals(
-                    currentEp.id,
-                    ManualAdRangeCodec.decode(currentEp.manualAdRanges),
-                    currentEp.durationSeconds.coerceAtLeast(0L) * 1000L
-                )
-                val combinedAdIntervals = (manualAdIntervals + transcriptAds + vozSkipIntervals).distinctBy { it.id }
+                val combinedAdIntervals = (
+                    manualAdIntervals + transcriptAds + vozIntervals(vozResult.skipRanges)
+                    ).distinctBy { it.id }
 
                 withContext(Dispatchers.Main) {
                     _waveformAmplitudes.value = waveform
@@ -1647,6 +1660,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             _isPlaying.value = false
             lastPauseTimestamp = System.currentTimeMillis()
             PodcastMediaService.pause(getApplication())
+            metadataRefreshJob?.cancel()
             stopPlaybackJob()
             viewModelScope.launch {
                 repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
@@ -1661,6 +1675,7 @@ class PodcastViewModel(application: Application) : AndroidViewModel(application)
             _isPlaying.value = false
             lastPauseTimestamp = System.currentTimeMillis()
             PodcastMediaService.pause(getApplication())
+            metadataRefreshJob?.cancel()
             stopPlaybackJob()
             viewModelScope.launch {
                 repository.updateEpisodeProgress(current.id, _playbackPositionMs.value, current.isCompleted)
