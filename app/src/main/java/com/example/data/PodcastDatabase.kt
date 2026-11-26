@@ -7,9 +7,14 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class], version = 8, exportSchema = false)
+@Database(
+    entities = [PodcastEntity::class, EpisodeEntity::class, SyncLogEntity::class, AsrWindowEntity::class],
+    version = 9,
+    exportSchema = false
+)
 abstract class PodcastDatabase : RoomDatabase() {
     abstract fun podcastDao(): PodcastDao
+    abstract fun asrWindowDao(): AsrWindowDao
 
     companion object {
         val MIGRATION_6_7 = object : Migration(6, 7) {
@@ -24,6 +29,17 @@ abstract class PodcastDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS asr_windows (" +
+                        "episodeId TEXT NOT NULL, startMs INTEGER NOT NULL, endMs INTEGER NOT NULL, " +
+                        "wordsJson TEXT NOT NULL, modelVersion TEXT NOT NULL, audioIdentity TEXT NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, PRIMARY KEY(episodeId, startMs))"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: PodcastDatabase? = null
 
@@ -34,7 +50,7 @@ abstract class PodcastDatabase : RoomDatabase() {
                     PodcastDatabase::class.java,
                     "podcast_database"
                 )
-                .addMigrations(MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration()
                 .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
